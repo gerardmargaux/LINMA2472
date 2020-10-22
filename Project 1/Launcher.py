@@ -103,7 +103,7 @@ def louvain_algorithm(G):
     return
 
 
-def k_cores_deocmposition(G):
+def k_cores_decomposition(G):
     """
     Computes the k-cores of G
     :param G: represents a graph
@@ -146,7 +146,7 @@ def barabasi_albert_generation(G):
     barabasi_graph = nx.relabel_nodes(barabasi_graph, mapping)
 
     # k-cores decomposition of barabasi-albert algo
-    kCores = k_cores_deocmposition(barabasi_graph)
+    kCores = k_cores_decomposition(barabasi_graph)
     for a, b in kCores.items():
         print(a, "core :", b)
 
@@ -159,6 +159,7 @@ def barabasi_albert_generation(G):
     louvain_algorithm(barabasi_graph)
     ax[1].title.set_text('Louvain algorithm of Barabasi-Albert')
     ax[1].set_axis_off()
+    plt.show()
 
     """fig2, axes2 = plt.subplots(nrows=1, ncols=2)
     ax_graph = axes2.flatten()
@@ -167,8 +168,9 @@ def barabasi_albert_generation(G):
     ax_graph[0].title.set_text('Co-occurrence network of characters')
     louvain_algorithm(G)
     ax_graph[1].set_axis_off()
-    ax_graph[1].title.set_text('Louvain algorithm of co-occurrence network')"""
-    plt.show()
+    ax_graph[1].title.set_text('Louvain algorithm of co-occurrence network')
+    fig.show()
+    fig2.show()"""
     return
 
 
@@ -183,10 +185,9 @@ def draw_graph(G):
     G = nx.relabel_nodes(G, mapping)
     nx.draw(G, node_size=30, with_labels=True)
     plt.show()
-    return
 
 
-def independent_cascade(G, p=0.05):
+def independent_cascade(G, p=0.1):
     """
     Defines the set of nodes that are activated in the graph
     :param G: represents the graph
@@ -195,8 +196,8 @@ def independent_cascade(G, p=0.05):
     """
     count = 0
     while len(new_infected) > 0:
-        print("New infected neighbours :", new_infected)
-        print("Total infected neighbours :", total_infected)
+        #print("New infected neighbours :", new_infected)
+        #print("Total infected neighbours :", total_infected)
         new_infected_iter = deepcopy(new_infected)
         for node in new_infected_iter:
             if node not in total_infected:
@@ -208,20 +209,59 @@ def independent_cascade(G, p=0.05):
                     not_infected_yet.append(neigh)
             val = p * len(not_infected_yet)
             number_of_activated = math.ceil(val)
-            #print("Number of activated neighbours = ", number_of_activated)
             random.shuffle(not_infected_yet)
             for n in not_infected_yet[:number_of_activated]:
                 total_infected.append(n)
                 new_infected.append(n)
             new_infected.remove(node)
         count += 1
+    #print("-----------------------------------END--------------------------------------------")
 
     return count
 
 
-def influence_maximization_problem(G):
-    pass
+def create_set(S):
+    """
+    Shuffles the set S and add the element of this set to total_infected and new_infected
+    :param S: Set containing items we want to add
+    :return:
+    """
+    random.shuffle(list(S))
+    S = set(S)
+    for item in S:
+        total_infected.append(item)
+        new_infected.append(item)
 
+
+def influence_maximization_problem(G):
+    """
+    Greedy algorithm if the influence maximization problem with hill-climbing heuristic
+    :param G: Graph used for determining the link between characters
+    :return: The final set containing 5% of the total number of nodes that maximizes the influence in the network
+    """
+    S = set()  # Initial set of nodes
+    R = 1  # Number of random cascades
+    nodes_in_set = math.ceil(G.number_of_nodes()*0.05)
+    for i in range(nodes_in_set):
+        best_node = None
+        best_sv = 0
+        for node in G.nodes():
+            a = node
+            if node not in S:
+                s_v = 0
+                new_set = S | {node}
+                for j in range(R):
+                    total_infected.clear()
+                    create_set(new_set)
+                    iter = independent_cascade(G)
+                    s_v += len(total_infected)
+                s_v /= R
+                if s_v > best_sv:
+                    best_sv = s_v
+                    best_node = node
+        S = S | {best_node}
+
+    return S
 
 if "__main__":
     G = buildGraph()
@@ -232,9 +272,7 @@ if "__main__":
     #barabasi_albert_generation(G)
     total_infected = []
     new_infected = []
-    S = sample(list(G.nodes()), 15)
-    for item in S:
-        total_infected.append(item)
-        new_infected.append(item)
-    count = independent_cascade(G)
-    print("Number of iterations = ", count)
+    #count = independent_cascade(G)
+    #print("Number of iterations = ", count)
+    S = influence_maximization_problem(G)
+    print("Final set : ", S)
