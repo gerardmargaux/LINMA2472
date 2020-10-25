@@ -137,13 +137,19 @@ def barabasi_albert_generation(G):
     Generates a random graph thanks to the barabasi-albert algorithm
     :return: The generated graph
     """
-    average_edges = round(G.number_of_edges()/len(listOfName))
-    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName), m=average_edges, seed=1998)
+    average_degree = 0
+    for node in G.nodes():
+        average_degree += G.degree(node)
+
+    average_degree /= len(listOfName)
+    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName), m=round(average_degree), seed=1998)
     mapping = {}
     for i in range(len(listOfName)):
         mapping[i] = listOfName[i]
 
     barabasi_graph = nx.relabel_nodes(barabasi_graph, mapping)
+    degree_assortativity = nx.degree_assortativity_coefficient(barabasi_graph)
+    print("Degree assortativity = ", degree_assortativity)
 
     # k-cores decomposition of barabasi-albert algo
     kCores = k_cores_decomposition(barabasi_graph)
@@ -233,9 +239,40 @@ def create_set(S):
         new_infected.append(item)
 
 
+def inluence_maximization_problem_greedy(G):
+    """
+    Greedy algorithm of the influence maximization problem
+    :param G: Graph used for determining the link between characters
+    :return: The final set containing 5% of the total number of nodes that maximizes the influence in the network
+    """
+    nodes_degree = dict()  # Dict of {node:degree}
+    S = []  # Initial set of nodes
+    nodes_in_set = math.ceil(G.number_of_nodes() * 0.05)
+    for node in G.nodes():
+        nodes_degree[node] = G.degree(node)
+
+    nodes_degree = dict(sorted(nodes_degree.items(), key=lambda x: x[1], reverse=True))
+
+    for i in range(nodes_in_set):
+        if len(S) == 0:
+            first_key = list(nodes_degree.keys())[0]
+            S.append(first_key)  # Adding the node with highest degree
+            del nodes_degree[first_key]
+        else:
+            neighbours = tuple()  # Tuple containing all neighbours of nodes present in S
+            for node in S:
+                neighbours = neighbours + tuple(G.neighbors(node))
+
+            for key, val in nodes_degree.items():
+                if key not in S and key in neighbours:
+                    S.append(key)
+                    break
+    return S
+
+
 def influence_maximization_problem(G):
     """
-    Greedy algorithm if the influence maximization problem with hill-climbing heuristic
+    Algorithm of the influence maximization problem with hill-climbing heuristic
     :param G: Graph used for determining the link between characters
     :return: The final set containing 5% of the total number of nodes that maximizes the influence in the network
     """
@@ -266,13 +303,14 @@ def influence_maximization_problem(G):
 if "__main__":
     G = buildGraph()
     #louvain_algorithm(G)
-    #kCores = k_cores_deocmposition(G)
+    #kCores = k_cores_decomposition(G)
     #for a, b in kCores.items():
     #    print(a, "core :", b)
-    #barabasi_albert_generation(G)
+    barabasi_albert_generation(G)
     total_infected = []
     new_infected = []
     #count = independent_cascade(G)
     #print("Number of iterations = ", count)
-    S = influence_maximization_problem(G)
-    print("Final set : ", S)
+    #S = influence_maximization_problem(G)
+    #S = inluence_maximization_problem_greedy(G)
+    #print("Final set : ", S)
