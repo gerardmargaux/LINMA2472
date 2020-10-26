@@ -4,9 +4,9 @@ import subprocess
 # implement pip as a subprocess:
 from math import e
 from random import choice, sample
-
-subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'python-louvain'])
-
+import numpy as np
+#subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'color'])
+#subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'python-Louvain'])
 import community
 from copy import deepcopy
 import random
@@ -15,15 +15,18 @@ from collections import Counter
 
 import networkx as nx
 import pandas as pd
+import color as clr
 
+from colour import Color
 
+colors = ["blue", "green", "red", "cyan", "magenta", "yellow", "black", "orange", "purple"]
 #Liste non exhaustive des personnages, 52 personnages identifiés
 listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zherkov", "Captain Timokhin", "Alpatych", "Weyrother",
               "Mortemart", "Morio", "Bolkonskaya", "Nicholas", "Joseph Alexeevich", "Peronskaya", "Vasili Dmitrich", "Tikhon", "Dolgorukov", "Langeron",
               "Mikhaylovna", "Anatole Kuragin",  "Dolokhov", "Stevens" ,  "Countess Rostova", "Denisov", "Likhachev","Lavrushka", "Miloradovich", "The Emperor",
-              "Count Ilya Rostov", "Count Rostov",  "Vera Rostova", "Nikolai Rostov",  "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
-              "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Princess Katerina Mamontova", "Bilibin","Captain Tushin", "Repnin","Bourienne",
-              "Shinshin", "Julie Drubetskaya", "Jacquot", "Márya Dmítrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]
+              "Count Ilya Rostov", "Count Rostov",  "Vera Rostova",  "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
+              "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin","Captain Tushin", "Repnin","Bourienne",
+              "Shinshin", "Julie Drubetskaya", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]
 
 
 def buildGraph():
@@ -93,12 +96,11 @@ def louvain_algorithm(G):
     partition = community.best_partition(G)
     size = float(len(set(partition.values())))
     pos = nx.spring_layout(G)
-    count = 0.
+    count = 0
     for com in set(partition.values()):
-        count = count + 1.
+        count += 1
         list_nodes = [nodes for nodes in partition.keys() if partition[nodes] == com]
-        nx.draw_networkx_nodes(G, pos, list_nodes, node_size=40, node_color=str(count / size))
-
+        nx.draw_networkx_nodes(G, pos, list_nodes, node_size=70, node_color=colors[count])
     nx.draw_networkx_edges(G, pos, alpha=0.5)
     return
 
@@ -145,7 +147,7 @@ def barabasi_albert_generation(G):
     barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName), m=round(average_degree), seed=1998)
     mapping = {}
     for i in range(len(listOfName)):
-        mapping[i] = listOfName[i]
+        mapping[i] = listOfName[i].lower()
 
     barabasi_graph = nx.relabel_nodes(barabasi_graph, mapping)
     degree_assortativity = nx.degree_assortativity_coefficient(barabasi_graph)
@@ -155,42 +157,29 @@ def barabasi_albert_generation(G):
     kCores = k_cores_decomposition(barabasi_graph)
     for a, b in kCores.items():
         print(a, "core :", b)
-
     # Comparison of G and barabasi-albert
     fig, axes = plt.subplots(nrows=1, ncols=2)
     ax = axes.flatten()
-    nx.draw_networkx(barabasi_graph, ax=ax[0])
+    nx.draw_networkx(barabasi_graph, with_labels = False, node_size = 100, ax=ax[0])
     ax[0].set_axis_off()
     ax[0].title.set_text('Generation of Barabasi-Albert')
     louvain_algorithm(barabasi_graph)
     ax[1].title.set_text('Louvain algorithm of Barabasi-Albert')
     ax[1].set_axis_off()
     plt.show()
-
-    """fig2, axes2 = plt.subplots(nrows=1, ncols=2)
-    ax_graph = axes2.flatten()
-    draw_graph(G)
-    ax_graph[0].set_axis_off()
-    ax_graph[0].title.set_text('Co-occurrence network of characters')
-    louvain_algorithm(G)
-    ax_graph[1].set_axis_off()
-    ax_graph[1].title.set_text('Louvain algorithm of co-occurrence network')
-    fig.show()
-    fig2.show()"""
     return
 
 
-def draw_graph(G):
-    """
-    Plot the network build based on the graph given in argument
-    :param G: the graph of the co-occurrence of characters
-    """
-    mapping = {}
-    for i in range(len(listOfName)):
-        mapping[i] = listOfName[i]
-    G = nx.relabel_nodes(G, mapping)
-    nx.draw(G, node_size=30, with_labels=True)
+def draw_cores(G, dictKcore):
+    nbrCore = len(dictKcore)
+    green = Color("green")
+    colors = list(green.range_to(Color("red"),nbrCore))
+    pos = nx.spring_layout(G)
+    for i in range(nbrCore):
+        nx.draw_networkx_nodes(G, pos, dictKcore[i], node_size=70, node_color=np.array([colors[i].rgb]))
+    nx.draw_networkx_edges(G, pos, alpha=0.5)
     plt.show()
+
 
 
 def independent_cascade(G, p=0.1):
@@ -302,8 +291,10 @@ def influence_maximization_problem(G):
 
 if "__main__":
     G = buildGraph()
-    #louvain_algorithm(G)
-    #kCores = k_cores_decomposition(G)
+    kCores = k_cores_decomposition(G)
+    draw_cores(G, kCores)
+    louvain_algorithm(G)
+
     #for a, b in kCores.items():
     #    print(a, "core :", b)
     barabasi_albert_generation(G)
