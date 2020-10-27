@@ -143,8 +143,9 @@ def barabasi_albert_generation(G):
     for node in G.nodes():
         average_degree += G.degree(node)
 
-    average_degree /= len(listOfName)
-    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName), m=round(average_degree), seed=1998)
+    average_degree /= (len(listOfName))
+    print(average_degree)
+    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName)-3, m=round(average_degree), seed=1998)
     mapping = {}
     for i in range(len(listOfName)):
         mapping[i] = listOfName[i].lower()
@@ -181,7 +182,6 @@ def draw_cores(G, dictKcore):
     plt.show()
 
 
-
 def independent_cascade(G, p=0.1):
     """
     Defines the set of nodes that are activated in the graph
@@ -193,6 +193,7 @@ def independent_cascade(G, p=0.1):
     while len(new_infected) > 0:
         #print("New infected neighbours :", new_infected)
         #print("Total infected neighbours :", total_infected)
+        nbr_infections.append(len(total_infected))
         new_infected_iter = deepcopy(new_infected)
         for node in new_infected_iter:
             if node not in total_infected:
@@ -266,7 +267,7 @@ def influence_maximization_problem(G):
     :return: The final set containing 5% of the total number of nodes that maximizes the influence in the network
     """
     S = set()  # Initial set of nodes
-    R = 1  # Number of random cascades
+    R = 30  # Number of random cascades
     nodes_in_set = math.ceil(G.number_of_nodes()*0.05)
     for i in range(nodes_in_set):
         best_node = None
@@ -279,7 +280,7 @@ def influence_maximization_problem(G):
                 for j in range(R):
                     total_infected.clear()
                     create_set(new_set)
-                    iter = independent_cascade(G)
+                    independent_cascade(G)
                     s_v += len(total_infected)
                 s_v /= R
                 if s_v > best_sv:
@@ -287,21 +288,114 @@ def influence_maximization_problem(G):
                     best_node = node
         S = S | {best_node}
 
-    return S
+    return list(S)
+
 
 if "__main__":
     G = buildGraph()
-    kCores = k_cores_decomposition(G)
-    draw_cores(G, kCores)
-    louvain_algorithm(G)
+    #kCores = k_cores_decomposition(G)
+    #draw_cores(G, kCores)
+    #louvain_algorithm(G)
 
     #for a, b in kCores.items():
     #    print(a, "core :", b)
     barabasi_albert_generation(G)
-    total_infected = []
-    new_infected = []
+    #total_infected = []
+    #new_infected = []
     #count = independent_cascade(G)
     #print("Number of iterations = ", count)
     #S = influence_maximization_problem(G)
     #S = inluence_maximization_problem_greedy(G)
     #print("Final set : ", S)
+
+    """deg = dict()
+    for node in G.nodes():
+        deg[node] = G.degree(node)
+    higher_deg = list(deg.keys())[:3]
+
+    iter = 100
+    average_infect = [0 for i in range(30)]
+    for i in range(iter):
+        S = inluence_maximization_problem_greedy(G)
+        new_infected = S
+        nbr_infections = []
+        total_infected = []
+        count = independent_cascade(G)
+        for j in range(len(nbr_infections)):
+            average_infect[j] += nbr_infections[j]
+
+    for i in range(len(average_infect)):
+        if i != 0 and round(average_infect[i] / iter) < average_infect[i - 1]:
+            average_infect[i] = average_infect[i - 1]
+        else:
+            average_infect[i] = round(average_infect[i] / iter)
+
+    print('Greedy : ', average_infect)
+    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Greedy max influence")
+    plt.xlim([1, 11])
+    plt.xlabel("Number of iterations")
+    plt.ylabel("Number of persons infected")
+    plt.title("Evolution of the total number of infected persons with respect to the time (p = 0.1)")
+
+    average_infect = [0 for i in range(30)]
+    for i in range(iter):
+        S = sample(list(G.nodes()), 3)
+        new_infected = S
+        nbr_infections = []
+        total_infected = []
+        count = independent_cascade(G)
+        for j in range(len(nbr_infections)):
+            average_infect[j] += nbr_infections[j]
+
+    for i in range(len(average_infect)):
+        if i != 0 and round(average_infect[i] / iter) < average_infect[i - 1]:
+            average_infect[i] = average_infect[i - 1]
+        else:
+            average_infect[i] = round(average_infect[i] / iter)
+
+    print('Random : ', average_infect)
+    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Random set")
+
+    average_infect = [0 for i in range(30)]
+    for i in range(iter):
+        S = higher_deg
+        new_infected = S
+        nbr_infections = []
+        total_infected = []
+        count = independent_cascade(G)
+        for j in range(len(nbr_infections)):
+            average_infect[j] += nbr_infections[j]
+
+    for i in range(len(average_infect)):
+        if i != 0 and round(average_infect[i]) < average_infect[i - 1]:
+            average_infect[i] = average_infect[i - 1]
+        else:
+            average_infect[i] = round(average_infect[i])
+
+    print('Degree : ', average_infect)
+    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Highest degree set")
+
+    average_infect = [0 for i in range(30)]
+    for i in range(iter):
+        total_infected = []
+        new_infected = []
+        nbr_infections = []
+        S = influence_maximization_problem(G)
+        new_infected = S
+        nbr_infections = []
+        total_infected = []
+        count = independent_cascade(G)
+        for j in range(len(nbr_infections)):
+            average_infect[j] += nbr_infections[j]
+
+    for i in range(len(average_infect)):
+        if i != 0 and round(average_infect[i] / iter) < average_infect[i - 1]:
+            average_infect[i] = average_infect[i - 1]
+        else:
+            average_infect[i] = round(average_infect[i] / iter)
+
+    print('Heuristic : ', average_infect)
+    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Hill-climbing max influence")
+
+    plt.legend()
+    plt.show()"""
