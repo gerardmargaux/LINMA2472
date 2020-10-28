@@ -24,9 +24,9 @@ colors = ["blue", "green", "red", "cyan", "magenta", "yellow", "black", "orange"
 listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zherkov", "Captain Timokhin", "Alpatych", "Weyrother",
               "Mortemart", "Morio", "Bolkonskaya", "Nicholas", "Joseph Alexeevich", "Peronskaya", "Vasili Dmitrich", "Tikhon", "Dolgorukov", "Langeron",
               "Mikhaylovna", "Anatole Kuragin",  "Dolokhov", "Stevens" ,  "Countess Rostova", "Denisov", "Likhachev","Lavrushka", "Miloradovich", "The Emperor",
-              "Count Ilya Rostov", "Count Rostov",  "Vera Rostova",  "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
-              "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin","Captain Tushin", "Repnin","Bourienne",
-              "Shinshin", "Julie Drubetskaya", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]
+              "Count Ilya Rostov", "Count Rostov", "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
+              "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin", "Repnin","Bourienne",
+              "Shinshin", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]
 
 
 def buildGraph():
@@ -50,7 +50,7 @@ def buildGraph():
                 for name in listOfName:
                     # La moitie des apparition sont sous le nom Count Ilya Rostov, l'autre moitie Count Rostov
                     if name == "Count Ilya Rostov":
-                        name.replace("Ilya", "")
+                        name = name.replace("Ilya", "")
                     if name.lower() in line.lower():
                         if name.lower() in dictForNames:
                             dictForNames[name.lower()] += 1
@@ -143,9 +143,8 @@ def barabasi_albert_generation(G):
     for node in G.nodes():
         average_degree += G.degree(node)
 
-    average_degree /= (len(listOfName))
-    print(average_degree)
-    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName)-3, m=round(average_degree), seed=1998)
+    average_degree /= (len(listOfName)*2)
+    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName), m=round(average_degree), seed=1998)
     mapping = {}
     for i in range(len(listOfName)):
         mapping[i] = listOfName[i].lower()
@@ -161,14 +160,14 @@ def barabasi_albert_generation(G):
     # Comparison of G and barabasi-albert
     fig, axes = plt.subplots(nrows=1, ncols=2)
     ax = axes.flatten()
-    nx.draw_networkx(barabasi_graph, with_labels = False, node_size = 100, ax=ax[0])
+    nx.draw_networkx(barabasi_graph, pos = nx.spring_layout(barabasi_graph) ,with_labels = False, node_size = 100, ax=ax[0])
     ax[0].set_axis_off()
     ax[0].title.set_text('Generation of Barabasi-Albert')
     louvain_algorithm(barabasi_graph)
     ax[1].title.set_text('Louvain algorithm of Barabasi-Albert')
     ax[1].set_axis_off()
     plt.show()
-    return
+    return barabasi_graph
 
 
 def draw_cores(G, dictKcore):
@@ -182,124 +181,159 @@ def draw_cores(G, dictKcore):
     plt.show()
 
 
-def independent_cascade(G, p=0.1):
+def independent_cascade(G, base_infected, p=0.1):
     """
     Defines the set of nodes that are activated in the graph
     :param G: represents the graph
     :param p: is the probability that a node infects its neighbours
+    :param base_infected: is the list of initial infected characters
     :return: the number of iteration needed to end the algorithm
     """
     count = 0
+    new_infected = base_infected
+    total_infected = []
+    nbr_infected_at_iter = [0]
     while len(new_infected) > 0:
-        #print("New infected neighbours :", new_infected)
-        #print("Total infected neighbours :", total_infected)
-        nbr_infections.append(len(total_infected))
+
         new_infected_iter = deepcopy(new_infected)
+        new_infected = []
         for node in new_infected_iter:
-            if node not in total_infected:
-                total_infected.append(node)
             neighbours = list(G.neighbors(node))
-            not_infected_yet = []
             for neigh in neighbours:
-                if neigh not in total_infected:
-                    not_infected_yet.append(neigh)
-            val = p * len(not_infected_yet)
-            number_of_activated = math.ceil(val)
-            random.shuffle(not_infected_yet)
-            for n in not_infected_yet[:number_of_activated]:
-                total_infected.append(n)
-                new_infected.append(n)
-            new_infected.remove(node)
+                if neigh not in total_infected and random.random() < p:
+                    new_infected.append(neigh)
+                    total_infected.append(neigh)
         count += 1
-    #print("-----------------------------------END--------------------------------------------")
+        nbr_infected_at_iter.append(len(total_infected))
 
-    return count
-
-
-def create_set(S):
-    """
-    Shuffles the set S and add the element of this set to total_infected and new_infected
-    :param S: Set containing items we want to add
-    :return:
-    """
-    random.shuffle(list(S))
-    S = set(S)
-    for item in S:
-        total_infected.append(item)
-        new_infected.append(item)
+    return len(total_infected), nbr_infected_at_iter
 
 
-def inluence_maximization_problem_greedy(G):
+
+def influence_maximization_problem_greedy(G, k):
     """
     Greedy algorithm of the influence maximization problem
     :param G: Graph used for determining the link between characters
-    :return: The final set containing 5% of the total number of nodes that maximizes the influence in the network
+    :param k: The percentage of node from the graph that are selected as first infected
+    :return: The final set containing k% of the total number of nodes that maximizes the influence in the network
     """
-    nodes_degree = dict()  # Dict of {node:degree}
-    S = []  # Initial set of nodes
-    nodes_in_set = math.ceil(G.number_of_nodes() * 0.05)
+    nodes_degree = {}
+    nodes_in_set = math.ceil(G.number_of_nodes() * k)
     for node in G.nodes():
         nodes_degree[node] = G.degree(node)
 
     nodes_degree = dict(sorted(nodes_degree.items(), key=lambda x: x[1], reverse=True))
-
+    first_key = list(nodes_degree.keys())[0]
+    S =  [first_key]# Initial set of nodes
+    del nodes_degree[first_key]
     for i in range(nodes_in_set):
-        if len(S) == 0:
-            first_key = list(nodes_degree.keys())[0]
-            S.append(first_key)  # Adding the node with highest degree
-            del nodes_degree[first_key]
-        else:
-            neighbours = tuple()  # Tuple containing all neighbours of nodes present in S
-            for node in S:
-                neighbours = neighbours + tuple(G.neighbors(node))
-
-            for key, val in nodes_degree.items():
-                if key not in S and key in neighbours:
-                    S.append(key)
-                    break
+        neighbours = []  # Tuple containing all neighbours of nodes present in S
+        for node in S:
+            neighbours = neighbours + list(G.neighbors(node))
+        for key, val in nodes_degree.items():
+            if key not in S and key in neighbours:
+                S.append(key)
+                break
     return S
 
 
-def influence_maximization_problem(G):
+def influence_maximization_problem(G, k, p=0.1):
     """
     Algorithm of the influence maximization problem with hill-climbing heuristic
     :param G: Graph used for determining the link between characters
-    :return: The final set containing 5% of the total number of nodes that maximizes the influence in the network
+    :param k: The percentage of node from the graph that are selected as first infected
+    :return: The final set containing k% of the total number of nodes that maximizes the influence in the network
     """
     S = set()  # Initial set of nodes
-    R = 30  # Number of random cascades
-    nodes_in_set = math.ceil(G.number_of_nodes()*0.05)
+    R = 100  # Number of random cascades
+    nodes_in_set = math.ceil(G.number_of_nodes()*k)
     for i in range(nodes_in_set):
         best_node = None
         best_sv = 0
         for node in G.nodes():
-            a = node
             if node not in S:
                 s_v = 0
                 new_set = S | {node}
                 for j in range(R):
-                    total_infected.clear()
-                    create_set(new_set)
-                    independent_cascade(G)
-                    s_v += len(total_infected)
+                    total_infected, _ = independent_cascade(G, list(new_set), p)
+                    s_v += total_infected
+                new_set = S
                 s_v /= R
                 if s_v > best_sv:
                     best_sv = s_v
                     best_node = node
         S = S | {best_node}
-
     return list(S)
+
+def generate_Set(G, k, p, opt = 0):
+    if opt == 0:
+        return sample(list(G.nodes()), math.ceil(k*len(listOfName)))
+    elif opt == 1:
+        deg = dict()
+        for node in G.nodes():
+            deg[node] = G.degree(node)
+        deg = dict(sorted(deg.items(), key = lambda x: x[1], reverse = True))
+        return list(deg.keys())[:3]
+    elif opt == 2:
+        return influence_maximization_problem(G, k, p)
+    else:
+        return influence_maximization_problem_greedy(G,k)
+
+def plot_Graph(G, k, p):
+    nbrIter = 50
+    listModel = ["Random set", "Highest degrees set", "Hill climbing max influence", "Greedy max influence"]
+    for i in p:
+        for j in k:
+            for model in range(4):#0: Random, 1: Highest degree, 2: Hill climbing, 3: Greedy
+                listTotInfected = [0 for z in range(30)] #nbr moyen d'infecté a chaque temps
+                for iter in range(nbrIter):
+                    total_infected, nbr_infected_at_iter = independent_cascade(G, generate_Set(G, j, i, model), i)
+                    listTotInfected.append(total_infected)
+                    for x in range(len(nbr_infected_at_iter)):
+                        listTotInfected[x] += nbr_infected_at_iter[x]
+
+                longest = 0
+                for x in range(1, len(listTotInfected)):
+                    if (listTotInfected[x] / nbrIter) < listTotInfected[x - 1]:
+                        listTotInfected[x] = listTotInfected[x - 1]
+                    else:
+                        listTotInfected[x] = (listTotInfected[x] / nbrIter)
+                        longest = max(longest, x)
+                print(listModel[model], listTotInfected[:longest+1])
+                plt.plot(range(0, len(listTotInfected)), listTotInfected, '-', label=  listModel[model])
+                plt.xlim([0, longest+1])
+                plt.xlabel("Number of iterations")
+                plt.ylabel("Number of persons infected")
+                plt.title("Evolution of the total number of infected persons with respect to the time (p =" + str(i) + ")")
+            plt.legend()
+            plt.show()
 
 
 if "__main__":
     G = buildGraph()
-    #kCores = k_cores_decomposition(G)
-    #draw_cores(G, kCores)
-    #louvain_algorithm(G)
-
-    #for a, b in kCores.items():
-    #    print(a, "core :", b)
-    barabasi_albert_generation(G)
+    kCores = k_cores_decomposition(G)
+    draw_cores(G, kCores)
+    louvain_algorithm(G)
+    for a, b in kCores.items():
+        print(a, "core :", b)
+    average_degree = []
+    for node in G.nodes():
+        average_degree.append(G.degree(node))
+    print("Graphe normal : ")
+    print("Moyenne des degrés :", np.mean(average_degree))
+    print("Variance des degrés :", np.var(average_degree))
+    print()
+    GBarabasi = barabasi_albert_generation(G)
+    average_degree = []
+    for node in GBarabasi.nodes():
+        average_degree.append(GBarabasi.degree(node))
+    print("Graphe Barabasi : ")
+    print("Moyenne des degrés :", np.mean(average_degree))
+    print("Variance des degrés :", np.var(average_degree))
+    print()
+    k = [0.05]
+    p = [0.05, 0.1, 0.2, 0.4]
+    plot_Graph(G, k, p)
     #total_infected = []
     #new_infected = []
     #count = independent_cascade(G)
@@ -307,95 +341,3 @@ if "__main__":
     #S = influence_maximization_problem(G)
     #S = inluence_maximization_problem_greedy(G)
     #print("Final set : ", S)
-
-    """deg = dict()
-    for node in G.nodes():
-        deg[node] = G.degree(node)
-    higher_deg = list(deg.keys())[:3]
-
-    iter = 100
-    average_infect = [0 for i in range(30)]
-    for i in range(iter):
-        S = inluence_maximization_problem_greedy(G)
-        new_infected = S
-        nbr_infections = []
-        total_infected = []
-        count = independent_cascade(G)
-        for j in range(len(nbr_infections)):
-            average_infect[j] += nbr_infections[j]
-
-    for i in range(len(average_infect)):
-        if i != 0 and round(average_infect[i] / iter) < average_infect[i - 1]:
-            average_infect[i] = average_infect[i - 1]
-        else:
-            average_infect[i] = round(average_infect[i] / iter)
-
-    print('Greedy : ', average_infect)
-    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Greedy max influence")
-    plt.xlim([1, 11])
-    plt.xlabel("Number of iterations")
-    plt.ylabel("Number of persons infected")
-    plt.title("Evolution of the total number of infected persons with respect to the time (p = 0.1)")
-
-    average_infect = [0 for i in range(30)]
-    for i in range(iter):
-        S = sample(list(G.nodes()), 3)
-        new_infected = S
-        nbr_infections = []
-        total_infected = []
-        count = independent_cascade(G)
-        for j in range(len(nbr_infections)):
-            average_infect[j] += nbr_infections[j]
-
-    for i in range(len(average_infect)):
-        if i != 0 and round(average_infect[i] / iter) < average_infect[i - 1]:
-            average_infect[i] = average_infect[i - 1]
-        else:
-            average_infect[i] = round(average_infect[i] / iter)
-
-    print('Random : ', average_infect)
-    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Random set")
-
-    average_infect = [0 for i in range(30)]
-    for i in range(iter):
-        S = higher_deg
-        new_infected = S
-        nbr_infections = []
-        total_infected = []
-        count = independent_cascade(G)
-        for j in range(len(nbr_infections)):
-            average_infect[j] += nbr_infections[j]
-
-    for i in range(len(average_infect)):
-        if i != 0 and round(average_infect[i]) < average_infect[i - 1]:
-            average_infect[i] = average_infect[i - 1]
-        else:
-            average_infect[i] = round(average_infect[i])
-
-    print('Degree : ', average_infect)
-    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Highest degree set")
-
-    average_infect = [0 for i in range(30)]
-    for i in range(iter):
-        total_infected = []
-        new_infected = []
-        nbr_infections = []
-        S = influence_maximization_problem(G)
-        new_infected = S
-        nbr_infections = []
-        total_infected = []
-        count = independent_cascade(G)
-        for j in range(len(nbr_infections)):
-            average_infect[j] += nbr_infections[j]
-
-    for i in range(len(average_infect)):
-        if i != 0 and round(average_infect[i] / iter) < average_infect[i - 1]:
-            average_infect[i] = average_infect[i - 1]
-        else:
-            average_infect[i] = round(average_infect[i] / iter)
-
-    print('Heuristic : ', average_infect)
-    plt.plot(list(range(1, len(average_infect) + 1)), average_infect, '-', label="Hill-climbing max influence")
-
-    plt.legend()
-    plt.show()"""
