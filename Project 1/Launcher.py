@@ -18,6 +18,7 @@ import pandas as pd
 import color as clr
 
 from colour import Color
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 colors = ["blue", "green", "red", "cyan", "magenta", "yellow", "black", "orange", "purple"]
 #Liste non exhaustive des personnages, 52 personnages identifiés
@@ -27,6 +28,12 @@ listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zh
               "Count Ilya Rostov", "Count Rostov", "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
               "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin", "Repnin","Bourienne",
               "Shinshin", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]
+"""listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zherkov", "Captain Timokhin", "Alpatych", "Weyrother",
+              "Mortemart", "Morio", "Bolkonskaya", "Nicholas", "Joseph Alexeevich", "Peronskaya", "Vasili Dmitrich", "Tikhon", "Dolgorukov", "Langeron",
+              "Mikhaylovna", "Anatole Kuragin",  "Dolokhov", "Stevens" ,  "Countess Rostova", "Denisov", "Likhachev","Lavrushka", "Miloradovich", "The Emperor",
+              "Count Ilya Rostov", "Count Rostov",  "Vera Rostova",  "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
+              "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin","Captain Tushin", "Repnin","Bourienne",
+              "Shinshin", "Julie Drubetskaya", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]"""
 
 
 def buildGraph():
@@ -89,19 +96,112 @@ def addToGraph(G, listName):
             G.add_edge(listName[i], listName[j])
 
 
+def community_layout(g, partition):
+    """
+    Compute the layout for a modular graph.
+
+
+    Arguments:
+    ----------
+    g -- networkx.Graph or networkx.DiGraph instance
+        graph to plot
+
+    partition -- dict mapping int node -> int community
+        graph partitions
+
+
+    Returns:
+    --------
+    pos -- dict mapping int node -> (float x, float y)
+        node positions
+
+    """
+
+    pos_communities = _position_communities(g, partition, scale=3.)
+
+    pos_nodes = _position_nodes(g, partition, scale=1.)
+
+    # combine positions
+    pos = dict()
+    for node in g.nodes():
+        pos[node] = pos_communities[node] + pos_nodes[node]
+
+    return pos
+
+
+def _position_communities(g, partition, **kwargs):
+
+    # create a weighted graph, in which each node corresponds to a community,
+    # and each edge weight to the number of edges between communities
+    between_community_edges = _find_between_community_edges(g, partition)
+
+    communities = set(partition.values())
+    hypergraph = nx.DiGraph()
+    hypergraph.add_nodes_from(communities)
+    for (ci, cj), edges in between_community_edges.items():
+        hypergraph.add_edge(ci, cj, weight=len(edges))
+
+    # find layout for communities
+    pos_communities = nx.spring_layout(hypergraph, **kwargs)
+
+    # set node positions to position of community
+    pos = dict()
+    for node, community in partition.items():
+        pos[node] = pos_communities[community]
+
+    return pos
+
+
+def _find_between_community_edges(g, partition):
+
+    edges = dict()
+
+    for (ni, nj) in g.edges():
+        ci = partition[ni]
+        cj = partition[nj]
+
+        if ci != cj:
+            try:
+                edges[(ci, cj)] += [(ni, nj)]
+            except KeyError:
+                edges[(ci, cj)] = [(ni, nj)]
+
+    return edges
+
+def _position_nodes(g, partition, **kwargs):
+    """
+    Positions nodes within communities.
+    """
+
+    communities = dict()
+    for node, community in partition.items():
+        try:
+            communities[community] += [node]
+        except KeyError:
+            communities[community] = [node]
+
+    pos = dict()
+    for ci, nodes in communities.items():
+        subgraph = g.subgraph(nodes)
+        pos_subgraph = nx.spring_layout(subgraph, **kwargs)
+        pos.update(pos_subgraph)
+
+    return pos
+
+
 def louvain_algorithm(G):
     # Source : https://perso.crans.org/aynaud/communities/
     degree_assortativity = nx.degree_assortativity_coefficient(G)
     print("Degree assortativity = ", degree_assortativity)
     partition = community.best_partition(G)
-    size = float(len(set(partition.values())))
-    pos = nx.spring_layout(G)
+    pos = community_layout(G, partition)
     count = 0
     for com in set(partition.values()):
         count += 1
         list_nodes = [nodes for nodes in partition.keys() if partition[nodes] == com]
         nx.draw_networkx_nodes(G, pos, list_nodes, node_size=70, node_color=colors[count])
     nx.draw_networkx_edges(G, pos, alpha=0.5)
+    plt.show()
     return
 
 
@@ -144,7 +244,7 @@ def barabasi_albert_generation(G):
         average_degree += G.degree(node)
 
     average_degree /= (len(listOfName)*2)
-    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName), m=round(average_degree), seed=1998)
+    barabasi_graph = nx.barabasi_albert_graph(n=len(listOfName)-1, m=round(average_degree), seed=1998)
     mapping = {}
     for i in range(len(listOfName)):
         mapping[i] = listOfName[i].lower()
@@ -157,10 +257,11 @@ def barabasi_albert_generation(G):
     kCores = k_cores_decomposition(barabasi_graph)
     for a, b in kCores.items():
         print(a, "core :", b)
+    #draw_cores(barabasi_graph, kCores)
     # Comparison of G and barabasi-albert
     fig, axes = plt.subplots(nrows=1, ncols=2)
     ax = axes.flatten()
-    nx.draw_networkx(barabasi_graph, pos = nx.spring_layout(barabasi_graph) ,with_labels = False, node_size = 100, ax=ax[0])
+    nx.draw_networkx(barabasi_graph, pos = nx.spring_layout(barabasi_graph), with_labels=False, node_size=100, ax=ax[0])
     ax[0].set_axis_off()
     ax[0].title.set_text('Generation of Barabasi-Albert')
     louvain_algorithm(barabasi_graph)
@@ -173,11 +274,23 @@ def barabasi_albert_generation(G):
 def draw_cores(G, dictKcore):
     nbrCore = len(dictKcore)
     green = Color("green")
-    colors = list(green.range_to(Color("red"),nbrCore))
-    pos = nx.spring_layout(G)
+    colors = list(green.range_to(Color("red"), nbrCore))
+    rgb_colors = []
+    for col in colors:
+        rgb_colors.append(col.get_rgb())
+
+    list_cores = list(reversed(list(dictKcore.values())))
+    #list_cores = list(dictKcore.values())
+    pos = nx.shell_layout(G, list_cores)
+    vmin = 0
+    vmax = len(dictKcore)-1
+    newcmp = LinearSegmentedColormap.from_list('colormap', rgb_colors, N=100)
     for i in range(nbrCore):
         nx.draw_networkx_nodes(G, pos, dictKcore[i], node_size=70, node_color=np.array([colors[i].rgb]))
     nx.draw_networkx_edges(G, pos, alpha=0.5)
+    sm = plt.cm.ScalarMappable(cmap=newcmp, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    plt.colorbar(sm)
     plt.show()
 
 
@@ -207,7 +320,6 @@ def independent_cascade(G, base_infected, p=0.1):
         nbr_infected_at_iter.append(len(total_infected))
 
     return len(total_infected), nbr_infected_at_iter
-
 
 
 def influence_maximization_problem_greedy(G, k):
@@ -265,6 +377,7 @@ def influence_maximization_problem(G, k, p=0.1):
         S = S | {best_node}
     return list(S)
 
+
 def generate_Set(G, k, p, opt = 0):
     if opt == 0:
         return sample(list(G.nodes()), math.ceil(k*len(listOfName)))
@@ -274,17 +387,18 @@ def generate_Set(G, k, p, opt = 0):
             deg[node] = G.degree(node)
         deg = dict(sorted(deg.items(), key = lambda x: x[1], reverse = True))
         return list(deg.keys())[:3]
-    elif opt == 2:
-        return influence_maximization_problem(G, k, p)
+    #elif opt == 2:
+    #    return influence_maximization_problem(G, k, p)
     else:
         return influence_maximization_problem_greedy(G,k)
 
+
 def plot_Graph(G, k, p):
-    nbrIter = 50
-    listModel = ["Random set", "Highest degrees set", "Hill climbing max influence", "Greedy max influence"]
+    nbrIter = 100000
+    listModel = ["Random set", "Highest degrees set", "Greedy max influence"]
     for i in p:
         for j in k:
-            for model in range(4):#0: Random, 1: Highest degree, 2: Hill climbing, 3: Greedy
+            for model in range(3): #0: Random, 1: Highest degree, 2: Hill climbing, 3: Greedy
                 listTotInfected = [0 for z in range(30)] #nbr moyen d'infecté a chaque temps
                 for iter in range(nbrIter):
                     total_infected, nbr_infected_at_iter = independent_cascade(G, generate_Set(G, j, i, model), i)
@@ -299,9 +413,9 @@ def plot_Graph(G, k, p):
                     else:
                         listTotInfected[x] = (listTotInfected[x] / nbrIter)
                         longest = max(longest, x)
-                print(listModel[model], listTotInfected[:longest+1])
-                plt.plot(range(0, len(listTotInfected)), listTotInfected, '-', label=  listModel[model])
-                plt.xlim([0, longest+1])
+                print(listModel[model], listTotInfected[:longest+3])
+                plt.plot(range(0, len(listTotInfected)), listTotInfected, '-', label=listModel[model])
+                plt.xlim([0, longest+2])
                 plt.xlabel("Number of iterations")
                 plt.ylabel("Number of persons infected")
                 plt.title("Evolution of the total number of infected persons with respect to the time (p =" + str(i) + ")")
@@ -312,9 +426,9 @@ def plot_Graph(G, k, p):
 if "__main__":
     G = buildGraph()
     kCores = k_cores_decomposition(G)
-    draw_cores(G, kCores)
-    louvain_algorithm(G)
-    for a, b in kCores.items():
+    #draw_cores(G, kCores)
+    #louvain_algorithm(G)
+    """for a, b in kCores.items():
         print(a, "core :", b)
     average_degree = []
     for node in G.nodes():
@@ -324,15 +438,17 @@ if "__main__":
     print("Variance des degrés :", np.var(average_degree))
     print()
     GBarabasi = barabasi_albert_generation(G)
+    print(GBarabasi.number_of_nodes())
     average_degree = []
     for node in GBarabasi.nodes():
         average_degree.append(GBarabasi.degree(node))
     print("Graphe Barabasi : ")
     print("Moyenne des degrés :", np.mean(average_degree))
     print("Variance des degrés :", np.var(average_degree))
-    print()
+    print()"""
+
     k = [0.05]
-    p = [0.05, 0.1, 0.2, 0.4]
+    p = [0.2]
     plot_Graph(G, k, p)
     #total_infected = []
     #new_infected = []
