@@ -28,12 +28,6 @@ listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zh
               "Count Ilya Rostov", "Count Rostov", "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
               "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin", "Repnin","Bourienne",
               "Shinshin", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]
-"""listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zherkov", "Captain Timokhin", "Alpatych", "Weyrother",
-              "Mortemart", "Morio", "Bolkonskaya", "Nicholas", "Joseph Alexeevich", "Peronskaya", "Vasili Dmitrich", "Tikhon", "Dolgorukov", "Langeron",
-              "Mikhaylovna", "Anatole Kuragin",  "Dolokhov", "Stevens" ,  "Countess Rostova", "Denisov", "Likhachev","Lavrushka", "Miloradovich", "The Emperor",
-              "Count Ilya Rostov", "Count Rostov",  "Vera Rostova",  "Natasha", "Petya",  "Sonya", "Drubetskoy", "Bonaparte", "Kirsten",
-              "Dmitri", "Marya Lvovna Karagina", "Karagina", "Count Cyril", "Bilibin","Captain Tushin", "Repnin","Bourienne",
-              "Shinshin", "Julie Drubetskaya", "Jacquot", "Marya Dmitrievna", "Kuzmich", "Marya Fedorovna", "Anisya Fedorovna"]"""
 
 
 def buildGraph():
@@ -304,10 +298,9 @@ def independent_cascade(G, base_infected, p=0.1):
     """
     count = 0
     new_infected = base_infected
-    total_infected = []
-    nbr_infected_at_iter = [0]
+    total_infected = base_infected
+    nbr_infected_at_iter = [len(base_infected)]
     while len(new_infected) > 0:
-
         new_infected_iter = deepcopy(new_infected)
         new_infected = []
         for node in new_infected_iter:
@@ -330,7 +323,7 @@ def influence_maximization_problem_greedy(G, k):
     :return: The final set containing k% of the total number of nodes that maximizes the influence in the network
     """
     nodes_degree = {}
-    nodes_in_set = math.ceil(G.number_of_nodes() * k)
+    nodes_in_set = math.ceil(len(listOfName) * k)
     for node in G.nodes():
         nodes_degree[node] = G.degree(node)
 
@@ -338,7 +331,7 @@ def influence_maximization_problem_greedy(G, k):
     first_key = list(nodes_degree.keys())[0]
     S =  [first_key]# Initial set of nodes
     del nodes_degree[first_key]
-    for i in range(nodes_in_set):
+    for i in range(nodes_in_set-1):
         neighbours = []  # Tuple containing all neighbours of nodes present in S
         for node in S:
             neighbours = neighbours + list(G.neighbors(node))
@@ -358,7 +351,7 @@ def influence_maximization_problem(G, k, p=0.1):
     """
     S = set()  # Initial set of nodes
     R = 100  # Number of random cascades
-    nodes_in_set = math.ceil(G.number_of_nodes()*k)
+    nodes_in_set = math.ceil(len(listOfName)*k)
     for i in range(nodes_in_set):
         best_node = None
         best_sv = 0
@@ -399,15 +392,22 @@ def plot_Graph(G, k, p):
     for i in p:
         for j in k:
             for model in range(3): #0: Random, 1: Highest degree, 2: Hill climbing, 3: Greedy
+                lastIteration = [0 for a in range(100000)]
+                count = 0
                 listTotInfected = [0 for z in range(30)] #nbr moyen d'infecté a chaque temps
                 for iter in range(nbrIter):
                     total_infected, nbr_infected_at_iter = independent_cascade(G, generate_Set(G, j, i, model), i)
-                    listTotInfected.append(total_infected)
                     for x in range(len(nbr_infected_at_iter)):
                         listTotInfected[x] += nbr_infected_at_iter[x]
-
+                    lastIteration[count] = total_infected
+                    count +=1
+                print(listModel[model], i, np.var(lastIteration))
+                '''
+                plt.hist(lastIteration)
+                plt.xlim([0, 49])
+                plt.show()'''
                 longest = 0
-                for x in range(1, len(listTotInfected)):
+                for x in range(0, len(listTotInfected)):
                     if (listTotInfected[x] / nbrIter) < listTotInfected[x - 1]:
                         listTotInfected[x] = listTotInfected[x - 1]
                     else:
