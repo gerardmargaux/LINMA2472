@@ -47,7 +47,7 @@ def bert(filename):
         text = fp.read()
         text = text.replace("\n\n", " ")
         sentences = sent_detector.tokenize(text)
-    encoded_sentences = embedder.encode(sentences)
+    encoded_sentences = embedder.encode(sentences, show_progress_bar=True)
 
     # Classification
     X, y = make_classification(n_samples=4000, n_features=4,
