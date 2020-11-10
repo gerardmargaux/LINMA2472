@@ -122,7 +122,6 @@ def word2vec(filename, show=True):
     person_set_vocab = [s.lower() for s in person_set_processed]
 
     # Get word embedding vectors
-    #embedding_vectors = model[model.wv.vocab]
     person_embedding_vectors = model[person_set_vocab]
 
     # PROJECT IT INTO 2D
