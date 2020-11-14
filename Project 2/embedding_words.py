@@ -92,11 +92,11 @@ def doc2vec_save(df_train):
     documents = [TaggedDocument(doc, [i]) for i, doc in enumerate(df_train['preprocessed'].tolist())]
 
     # Define the model
-    doc_model = gensim.models.Doc2Vec(vector_size=300, window=4, compute_loss=True, min_count=10, alpha=0.01)
+    doc_model = gensim.models.Doc2Vec( vector_size=40, window=4, compute_loss=True, min_count=10, alpha=0.01)
     doc_model.build_vocab(documents)
 
     # Train the model
-    max_epochs = 10
+    max_epochs = 15
     for epoch in range(max_epochs):
         print('iteration {0}'.format(epoch))
         doc_model.train(documents, total_examples=doc_model.corpus_count, epochs=doc_model.iter)
@@ -139,7 +139,7 @@ def classifier(df_train, df_test, bert_embedding=True):
         df_train = preprocessing_fun(df_train, token=True)
         df_test = preprocessing_fun(df_test, token=True)
         nbr_test = len(df_test)
-        df_tot = df_train.append(df_test) 
+        df_tot = df_train.append(df_test)
         doc2vec_save(df_tot)
         df_train_encoded, df_test_encoded = doc2vec_load(df_test, df_train, nbr_test)
 
@@ -158,7 +158,7 @@ def classifier(df_train, df_test, bert_embedding=True):
     model = tf.keras.Sequential()
     top_words = 20000
     embedding_vecor_length = 32
-    model.add(Embedding(top_words, embedding_vecor_length, input_length=300))
+    model.add(Embedding(top_words, embedding_vecor_length, input_length=40))
     model.add(LSTM(100))
     model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
     model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
@@ -176,8 +176,11 @@ def classifier(df_train, df_test, bert_embedding=True):
     for name, model in models.items():
         classifier = model.fit(X_train, y_train)
         y_pred = classifier.predict(X_test)
+        y_pred2 = classifier.predict(X_train)
         acc = accuracy_score(y_test, y_pred)*100
-        print(f"{name} : {acc} %")
+        acc2 = accuracy_score(y_train, y_pred2)*100
+        print(f"{name} test : {acc} %")
+        print(f"{name} train : {acc2} %")
 
     return
 
@@ -196,6 +199,5 @@ if __name__ == '__main__':
     df_train = pd.concat([df_biden_train, df_trump_train], axis=0)
     df_test = df_test.sample(frac=1).reset_index().drop(columns="index")
     df_train = df_train.sample(frac=1).reset_index().drop(columns="index")
-    #classifier(df_train, df_test)  # With Bert embedding
-    classifier(df_train, df_test, bert_embedding=False)  # With Word2Vec embedding
-
+    classifier(df_train, df_test)  # With Bert embedding
+    #classifier(df_train, df_test, bert_embedding=False)  # With Word2Vec embedding

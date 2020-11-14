@@ -16,6 +16,8 @@ from sklearn.datasets import make_classification
 import nltk
 import matplotlib.pyplot as plt
 import numpy as np
+import networkx as nx
+import community
 from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -33,10 +35,17 @@ listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zh
 
 def build_dict_persons(filename):
     dictForNames = {}
+    dictForNamesTot = {}
+    listOfNameInParagraph = []
+    G = nx.Graph()
     with open(filename) as f:
         while True:
             line = f.readline()
-            if line != "":
+            if line == "\n":
+                addToGraph(G, listOfNameInParagraph)
+                dictForNames = {}
+                listOfNameInParagraph = []
+            elif line != "":
                 # retire les caracteres spéciaux
                 line = castLine(line)
                 for name in listOfName:
@@ -44,12 +53,13 @@ def build_dict_persons(filename):
                     if name == "Count Ilya Rostov":
                         name = name.replace("Ilya", "")
                     if name.lower() in line.lower():
-                        if name.lower() in dictForNames:
-                            dictForNames[name.lower()] += 1
-                        else:
-                            dictForNames[name.lower()] = 1
+                        dictForNames[name.lower()] = dictForNames.get(name.lower(), 0) + 1
+                        dictForNamesTot[name.lower()] = dictForNamesTot.get(name.lower(), 0) + 1
+                        if dictForNames[name.lower()] == 1:
+                            listOfNameInParagraph.append(name.lower())
+                            G.add_node(name.lower())
             else:
-                return dictForNames
+                return dictForNamesTot, G
 
 
 def castLine(line):
@@ -68,6 +78,16 @@ def castLine(line):
     line = line.replace(",", "")
     return line
 
+def addToGraph(G, listName):
+    """
+    An edge was added in G for all pairs of names in listName
+    :param G: represents the graph
+    :param listName: represents the list of all characters
+    """
+    for i in range(len(listName)):
+        for j in range(i+1, len(listName)):
+            G.add_edge(listName[i], listName[j])
+
 
 def preprocessing_as_token(sentences, dict_pers):
     all_sentences = sentences
@@ -81,9 +101,9 @@ def preprocessing_as_token(sentences, dict_pers):
     return all_sentences_preprocessed
 
 
-def word2vec(filename, show=True):
+def word2vec(filename, dictPerson, show=True):
     compound_person_dict = {}
-    for person, count in build_dict_persons(filename).items():
+    for person, count in dictPerson.items():
         person_list = person.split()
         if len(person_list) > 1:
             compound_person_dict[person] = "".join(person_list)
@@ -105,10 +125,10 @@ def word2vec(filename, show=True):
             sent_clean = sent_clean.replace(person, compound_person)
         all_sentences_clean2.append(sent_clean)
 
-    preprocessed_sentences = preprocessing_as_token(all_sentences_clean2, build_dict_persons(filename))
+    preprocessed_sentences = preprocessing_as_token(all_sentences_clean2, dictPerson)
 
     # Define the model
-    model = gensim.models.Word2Vec(size=100, window=4, min_count=10, alpha=0.01)
+    model = gensim.models.Word2Vec(size=5, window=10, min_count=1, alpha=0.01)
     model.build_vocab(preprocessed_sentences)
 
     # Train the model
@@ -138,16 +158,14 @@ def word2vec(filename, show=True):
     plt.ylabel("t-SNE 2")
     plt.show()
 
-    return person_embedding_vectors, V_tranform, vocabulary
+    return person_embedding_vectors, V_tranform, person_set_vocab
 
 
-def clustering(embedding_vectors, V_transform, vocabulary):
-    NUM_CLUSTERS = 5
+def clustering(embedding_vectors, V_transform, vocabulary, NUM_CLUSTERS = 4):
     kclusterer_sklearn = KMeans(n_clusters=NUM_CLUSTERS)
 
     # be careful to supply the projected vectors (2D) to the algorithm!
     assigned_clusters = kclusterer_sklearn.fit_predict(V_transform)
-
     # DEFINE COLORS OF CLUSTERS
     colors = cm.nipy_spectral(np.array(assigned_clusters).astype(float) / NUM_CLUSTERS)
 
@@ -158,10 +176,11 @@ def clustering(embedding_vectors, V_transform, vocabulary):
 
     for i, (x, y) in enumerate(V_transform):
         plt.text(x, y, vocabulary[i], color=colors[i],
-                 fontsize=4, alpha=0.5)
+                 fontsize=12, alpha=0.5)
     plt.xlabel("t-SNE 1")
     plt.ylabel("t-SNE 2")
     plt.show()
+    return list(zip(vocabulary, assigned_clusters))
 
 
 def jaccard_similarity(labels1, labels2):
@@ -196,9 +215,19 @@ def jaccard_similarity(labels1, labels2):
 
 if __name__ == '__main__':
     book = '../Project 1/book.txt'
-    dict_pers = build_dict_persons(book)
+    dict_pers, G = build_dict_persons(book)
     #print(dict_pers)
     #sentences = preprocessing_as_token(book)
-    embedding_vectors, V_tranform, vocabulary = word2vec(book, show=False)
-    clustering(embedding_vectors, V_tranform, vocabulary)
+    embedding_vectors, V_tranform, person_set_vocab = word2vec(book, dict_pers, show=False)
+    partitionLouvain = community.best_partition(G)
+    maxPartition = 0
+    for i in partitionLouvain:
+        maxPartition = max(partitionLouvain[i], maxPartition)
+    print(maxPartition+1)
+    cluster = clustering(embedding_vectors, V_tranform, person_set_vocab, maxPartition+1)
+    sortedLouvain = sorted(partitionLouvain.items())
+    sortedLouvain = sortedLouvain[:9] + [sortedLouvain[10]] + [sortedLouvain[9]] + sortedLouvain[11:]
+    sortedCluster = sorted(cluster)
+    print(jaccard_similarity([n for (_, n) in sortedLouvain], [n for (_, n) in sortedCluster]))
 
+    #print(jaccard_similarity(cluster, partitionLouvain))
