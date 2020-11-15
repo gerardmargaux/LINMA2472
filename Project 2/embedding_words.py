@@ -64,14 +64,28 @@ def preprocessing_fun(df, token=True):
 def bert(df_train, long=False):
     tqdm.pandas()
     if long:
-        embedder = SentenceTransformer('bert-base-nli-mean-tokens')
+        embedder = SentenceTransformer('distilbert-base-nli-stsb-mean-tokens')
         encoded = df_train['preprocessed'].progress_apply(lambda row: embedder.encode(row))
         final_df = pd.DataFrame({'col': list(encoded)})
         final_df.to_csv('bert.csv')
 
     else:
-        tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/bert-base-nli-mean-tokens")
-        model = AutoModel.from_pretrained("sentence-transformers/bert-base-nli-mean-tokens")
+        model = SentenceTransformer('distilbert-base-nli-stsb-mean-tokens')
+        df_train = preprocessing_fun(df_train, token = False)
+        listOfEncoding = model.encode(df_train['preprocessed'].tolist(), show_progress_bar = True)
+        lastLen = len(listOfEncoding[0])
+        print(len(listOfEncoding), len(df_train['subreddit']))
+        for i in listOfEncoding:
+            if lastLen != len(i):
+                print("Different length :", lastLen, len)
+            lastLen = len(i)
+        final_df = pd.DataFrame(listOfEncoding)
+        final_df.reset_index(inplace= True)
+        df_train.reset_index(inplace= True)
+        final_df['subreddit'] = df_train['subreddit']
+        print(final_df)
+        '''tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/distilbert-base-nli-stsb-mean-tokens")
+        model = AutoModel.from_pretrained("sentence-transformers/distilbert-base-nli-stsb-mean-tokens")
         #df_train['preprocessed'] = df_train['preprocessed'].apply(lambda x: tokenizer.tokenize(x))
         tokenized = df_train['preprocessed'].apply(lambda x: tokenizer.encode(x, add_special_tokens=True, truncation=True,
                                                                                max_length=1000))
@@ -83,7 +97,8 @@ def bert(df_train, long=False):
         attention_mask = np.where(padded != 0, 1, 0)
 
         final_df = pd.DataFrame(attention_mask)
-        final_df['subreddit'] = df_train['subreddit'].tolist()
+        final_df['subreddit'] = df_train['subreddit'].tolist() '''
+        print('finished Embedding')
 
     return final_df
 
