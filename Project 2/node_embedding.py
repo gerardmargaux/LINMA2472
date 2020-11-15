@@ -10,14 +10,22 @@ from nltk.cluster import KMeansClusterer
 from gensim.parsing.preprocessing import preprocess_string, strip_short
 from gensim.parsing.preprocessing import strip_tags       # strip html tags
 from gensim.parsing.preprocessing import strip_multiple_whitespaces
+from gensim.parsing.preprocessing import stem_text
+from gensim.parsing.preprocessing import remove_stopwords
 from gensim.parsing.preprocessing import strip_punctuation, strip_non_alphanum
+from sentence_transformers import SentenceTransformer
+from sklearn.datasets import make_classification
 import nltk
-import pandas as pd
 import networkx as nx
+import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from joblib.numpy_pickle_utils import xrange
 
 listOfName = ["Pavlovna", "Vasili Kuragin", "Helene", "Pierre", "Hippolyte", "Zherkov", "Captain Timokhin", "Alpatych", "Weyrother",
               "Mortemart", "Morio", "Bolkonskaya", "Nicholas", "Joseph Alexeevich", "Peronskaya", "Vasili Dmitrich", "Tikhon", "Dolgorukov", "Langeron",
@@ -68,155 +76,12 @@ def castLine(line):
 def preprocessing_as_token(sentences, dict_pers):
     all_sentences = sentences
     # Preprocessing filters
-    filters = [lambda x: strip_short(x.lower(), 4), strip_multiple_whitespaces, strip_tags, strip_punctuation,
-               strip_non_alphanum]
+    filters = [lambda x: strip_short(x.lower(), 4), strip_multiple_whitespaces, strip_tags, strip_non_alphanum]
     all_sentences_preprocessed = []
     for sent in all_sentences:
         parsed_line = preprocess_string(sent, filters)
         all_sentences_preprocessed.append(parsed_line)
     return all_sentences_preprocessed
-
-
-def word2vec(filename):
-    compound_person_dict = {}
-    for person, count in build_dict_persons(filename).items():
-        person_list = person.split()
-        if len(person_list) > 1:
-            compound_person_dict[person] = "_".join(person_list)
-        else:
-            compound_person_dict[person] = person
-
-    sent_detector = nltk.data.load('punkt/english.pickle')
-    all_sentences = []
-    with open(filename, "r", encoding="utf-8") as fp:
-        text = fp.read()
-        text = text.replace("\n\n", " ")
-        text = castLine(text)
-        all_sentences = sent_detector.tokenize(text)
-
-    all_sentences_clean2 = []
-    for sent in all_sentences:
-        sent_clean = sent.lower()
-        for person, compound_person in compound_person_dict.items():
-            sent_clean = sent_clean.replace(person, compound_person)
-        all_sentences_clean2.append(sent_clean)
-
-    preprocessed_sentences = preprocessing_as_token(all_sentences_clean2, build_dict_persons(filename))
-
-    # Define the model
-    model = gensim.models.Word2Vec(size=300, window=30, min_count=1, alpha=0.1)
-    #model = gensim.models.Word2Vec(window=wind, min_count=1)
-    model.build_vocab(preprocessed_sentences)
-
-    # Train the model
-    model.train(preprocessed_sentences, total_examples=model.corpus_count, compute_loss=True, epochs=100)
-
-    # Get vocabulary from the model
-    vocabulary = list(model.wv.vocab)
-
-    person_set_processed = [s for s in compound_person_dict.values() if s.lower() in vocabulary]
-    person_set_vocab = [s.lower() for s in person_set_processed]
-
-    # Get word embedding vectors
-    person_embedding_vectors = model[person_set_vocab]
-
-    # PROJECT IT INTO 2D
-    V_tranform = TSNE(n_components=2).fit_transform(person_embedding_vectors)
-
-    # PLOT THE PROJECTION
-    fig = plt.figure(figsize=(10, 8), dpi=90)
-    plt.scatter(*zip(*V_tranform), marker='.', s=100, lw=0, alpha=0.7,
-                edgecolor='k')
-    for i, (x, y) in enumerate(V_tranform):
-        plt.text(x, y, person_set_vocab[i],
-                 fontsize=10, alpha=0.5)
-    plt.xlabel("t-SNE 1")
-    plt.ylabel("t-SNE 2")
-    plt.show()
-
-    return person_embedding_vectors, V_tranform, person_set_vocab
-
-
-def clustering(embedding_vectors, V_transform, vocabulary, n_clusters=5):
-    NUM_CLUSTERS = n_clusters
-    kclusterer_sklearn = KMeans(n_clusters=NUM_CLUSTERS)
-
-    # be careful to supply the projected vectors (2D) to the algorithm!
-    assigned_clusters = kclusterer_sklearn.fit_predict(V_tranform)
-
-    # DEFINE COLORS OF CLUSTERS
-    colors = []
-    for lab in assigned_clusters:
-        if lab == 0:
-            colors.append("cyan")
-        elif lab == 1:
-            colors.append("magenta")
-        elif lab == 2:
-            colors.append("green")
-        elif lab == 3:
-            colors.append("orange")
-        elif lab == 4:
-            colors.append("red")
-        else:
-            colors.append("purple")
-
-    # PLOT THE RESULTS
-    fig = plt.figure(figsize=(10, 8), dpi=90)
-    plt.scatter(*zip(*V_tranform), marker='.', s=100, lw=0, alpha=0.7, c=colors,
-                edgecolor='k')
-
-    for i, (x, y) in enumerate(V_tranform):
-        plt.text(x, y, vocabulary[i], color=colors[i],
-                 fontsize=10, alpha=0.7)
-
-    plt.xlabel("t-SNE 1")
-    plt.ylabel("t-SNE 2")
-    plt.show()
-    return assigned_clusters
-
-
-def addToGraph(G, listName):
-    """
-    An edge was added in G for all pairs of names in listName
-    :param G: represents the graph
-    :param listName: represents the list of all characters
-    """
-    for i in range(len(listName)):
-        for j in range(i+1, len(listName)):
-            G.add_edge(listName[i], listName[j])
-
-
-def buildGraph2():
-    """
-    Builds the graph and links 2 characters if they appear in the same paragraph
-    :return : The builded graph
-    """
-    dictForNames = {}
-    listOfNameInParagraph = []
-    G = nx.Graph()
-    with open("./book.txt") as f:
-        while True:
-            line = f.readline()
-            if line == "\n":
-                addToGraph(G, listOfNameInParagraph)
-                dictForNames = {}
-                listOfNameInParagraph = []
-            elif line != "":
-                # retire les caracteres spéciaux
-                line = castLine(line)
-                for name in listOfName:
-                    # La moitie des apparition sont sous le nom Count Ilya Rostov, l'autre moitie Count Rostov
-                    if name == "Count Ilya Rostov":
-                        name = name.replace("Ilya", "")
-                    if name.lower() in line.lower():
-                        if name.lower() in dictForNames:
-                            dictForNames[name.lower()] += 1
-                        else:
-                            dictForNames[name.lower()] = 1
-                            listOfNameInParagraph.append(name.lower())
-                            G.add_node(name.lower())
-            else:
-                return G
 
 
 def community_layout(g, partition):
@@ -242,7 +107,7 @@ def community_layout(g, partition):
 
     pos_communities = _position_communities(g, partition, scale=3.)
 
-    pos_nodes = _position_nodes(g, partition, scale=1.)
+    pos_nodes = _position_nodes(g, partition, scale=1.4)
 
     # combine positions
     pos = dict()
@@ -312,6 +177,149 @@ def _position_nodes(g, partition, **kwargs):
     return pos
 
 
+def addToGraph(G, listName):
+    """
+    An edge was added in G for all pairs of names in listName
+    :param G: represents the graph
+    :param listName: represents the list of all characters
+    """
+    for i in range(len(listName)):
+        for j in range(i+1, len(listName)):
+            G.add_edge(listName[i], listName[j])
+
+
+def word2vec(filename):
+    compound_person_dict = {}
+    for person, count in build_dict_persons(filename).items():
+        person_list = person.split()
+        if len(person_list) > 1:
+            compound_person_dict[person] = "_".join(person_list)
+        else:
+            compound_person_dict[person] = person
+
+    sent_detector = nltk.data.load('punkt/english.pickle')
+    all_sentences = []
+    with open(filename, "r", encoding="utf-8") as fp:
+        text = fp.read()
+        text = text.replace("\n\n", " ")
+        text = castLine(text)
+        all_sentences = sent_detector.tokenize(text)
+
+    all_sentences_clean2 = []
+    for sent in all_sentences:
+        sent_clean = sent.lower()
+        for person, compound_person in compound_person_dict.items():
+            sent_clean = sent_clean.replace(person, compound_person)
+        all_sentences_clean2.append(sent_clean)
+
+    preprocessed_sentences = preprocessing_as_token(all_sentences_clean2, build_dict_persons(filename))
+
+    # Define the model
+    model = gensim.models.Word2Vec(size=300, window=30, min_count=1, alpha=0.1)
+    model.build_vocab(preprocessed_sentences)
+
+    # Train the model
+    model.train(preprocessed_sentences, total_examples=model.corpus_count, compute_loss=True, epochs=100)
+
+    # Get vocabulary from the model
+    vocabulary = list(model.wv.vocab)
+
+    person_set_processed = [s for s in compound_person_dict.values() if s.lower() in vocabulary]
+    person_set_vocab = [s.lower() for s in person_set_processed]
+
+    # Get word embedding vectors
+    person_embedding_vectors = model[person_set_vocab]
+    print(len(person_set_vocab))
+
+    # PROJECT IT INTO 2D
+    V_tranform = TSNE(n_components=2).fit_transform(person_embedding_vectors)
+
+    # PLOT THE PROJECTION
+    fig = plt.figure(figsize=(10, 8), dpi=90)
+    plt.scatter(*zip(*V_tranform), marker='.', s=100, lw=0, alpha=0.7,
+                edgecolor='k')
+    for i, (x, y) in enumerate(V_tranform):
+        plt.text(x, y, person_set_vocab[i],
+                 fontsize=10, alpha=0.5)
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
+    plt.show()
+
+    return person_embedding_vectors, V_tranform, person_set_vocab
+
+
+def clustering(embedding_vectors, V_transform, vocabulary, n_clusters=5):
+    NUM_CLUSTERS = n_clusters
+    kclusterer_sklearn = KMeans(n_clusters=NUM_CLUSTERS)
+
+    # be careful to supply the projected vectors (2D) to the algorithm!
+    assigned_clusters = kclusterer_sklearn.fit_predict(V_tranform)
+    print(len(assigned_clusters))
+
+    # DEFINE COLORS OF CLUSTERS
+    colors = []
+    for lab in assigned_clusters:
+        if lab == 0:
+            colors.append("cyan")
+        elif lab == 1:
+            colors.append("magenta")
+        elif lab == 2:
+            colors.append("green")
+        elif lab == 3:
+            colors.append("orange")
+        elif lab == 4:
+            colors.append("red")
+        else:
+            colors.append("purple")
+
+    # PLOT THE RESULTS
+    fig = plt.figure(figsize=(10, 8), dpi=90)
+    plt.scatter(*zip(*V_tranform), marker='.', s=100, lw=0, alpha=0.7, c=colors,
+                edgecolor='k')
+
+    for i, (x, y) in enumerate(V_tranform):
+        plt.text(x, y, vocabulary[i], color=colors[i],
+                 fontsize=10, alpha=0.5)
+
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
+    plt.show()
+    return assigned_clusters
+
+
+def buildGraph2():
+    """
+    Builds the graph and links 2 characters if they appear in the same paragraph
+    :return : The builded graph
+    """
+    dictForNames = {}
+    listOfNameInParagraph = []
+    G = nx.Graph()
+    with open("./book.txt") as f:
+        while True:
+            line = f.readline()
+            if line == "\n":
+                addToGraph(G, listOfNameInParagraph)
+                dictForNames = {}
+                listOfNameInParagraph = []
+            elif line != "":
+                # retire les caracteres spéciaux
+                line = castLine(line)
+                for name in listOfName:
+                    # La moitie des apparition sont sous le nom Count Ilya Rostov, l'autre moitie Count Rostov
+                    if name == "Count Ilya Rostov":
+                        name = name.replace("Ilya", "")
+                    if name.lower() in line.lower():
+                        if name.lower() in dictForNames:
+                            dictForNames[name.lower()] += 1
+                        else:
+                            dictForNames[name.lower()] = 1
+                            listOfNameInParagraph.append(name.lower())
+                            G.add_node(name.lower())
+            else:
+                return G
+
+
 def louvain_algo():
     G = buildGraph2()
     partitions = {}
@@ -331,12 +339,13 @@ def louvain_algo():
 
     colors = ["cyan", "magenta", "green", "orange", "red", "purple"]
     pos = community_layout(G, part)
+    print(G.number_of_nodes())
     labels = {}
     for node in G.nodes():
         labels[node] = node
     for com in set(part.values()):
         list_nodes = [nodes for nodes in part.keys() if part[nodes] == com]
-        labs = {k:k for k in list_nodes}
+        labs = {k: k for k in list_nodes}
         nx.draw_networkx_nodes(G, pos, list_nodes, node_size=20, node_color=colors[com])
         nx.draw_networkx_labels(G, pos, labs, font_size=9, font_color=colors[com], verticalalignment='bottom',
                                 horizontalalignment='left')
@@ -382,4 +391,5 @@ if __name__ == '__main__':
     assigned_clusters = clustering(embedding_vectors, V_tranform, vocabulary, n_clusters+1)
     result = jaccard_similarity(assigned_clusters, list(partitionLouvain.values()))
     print(result)
+
 
