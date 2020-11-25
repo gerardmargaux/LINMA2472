@@ -1,8 +1,9 @@
 import hashlib
 import math
 from copy import deepcopy
-
+import matplotlib.pyplot as plt
 import pandas as pd
+import statistics as stat
 from sklearn.preprocessing import LabelEncoder
 
 
@@ -62,6 +63,7 @@ def form_classes(df, flag=True):
         dict_classes = dict()
         for (index, dob, zipcode) in list_tuples:
             dict_classes[(dob, zipcode)] = dict_classes.get((dob, zipcode), 0) + 1
+        dict_classes = dict(sorted(dict_classes.items(), key=lambda x: x[1], reverse=False))
     else:
         sub_df = df[["dob", "zipcode", "disease"]]
         list_tuples = sub_df.to_records()  # Rows of the sub-dataframe into tuples
@@ -69,7 +71,6 @@ def form_classes(df, flag=True):
         for (index, dob, zipcode, disease) in list_tuples:
             dict_classes[(dob, zipcode, disease)] = dict_classes.get((dob, zipcode, disease), 0) + 1
 
-    dict_classes = dict(sorted(dict_classes.items(), key=lambda x: x[1], reverse=False))
     return dict_classes
 
 
@@ -83,9 +84,7 @@ def k_anonymization(df, k=2):
     dict_clas = form_classes(df)
     new_df = deepcopy(df)
     for key, val in dict_clas.items():
-        if val >= k:
-            continue
-        else:
+        if val < k:
             index = new_df.index[(new_df["dob"] == key[0]) & (new_df["zipcode"] == key[1])].tolist()
             index_to_drop += index
 
@@ -93,26 +92,24 @@ def k_anonymization(df, k=2):
     return new_df
 
 
-def l_diversity(df, l=2):
+def l_diversity(df, l=2, modify_df = True):
     index_to_drop = []
     dict_clas = form_classes(df, flag=False)
     dict_diversity = {}
     new_df = deepcopy(df)
+    sum = 0
     for key, val in dict_clas.items():
-        current_dict = dict_diversity.get(key[0:2], {})
-        current_dict[key[2]] = current_dict.get(key[2], 0) + 1
-        dict_diversity[key[0:2]] = current_dict
+        dict_diversity[key[0:2]] = dict_diversity.get(key[0:2], {})
+        dict_diversity[key[0:2]][key[2]] = dict_diversity[key[0:2]].get(key[2], 0) + val
 
-    for key, val in dict_diversity.items():
-        if len(val) >= l:
-            continue
-        else:
-            index = new_df.index[(new_df["dob"] == key[0]) & (new_df["zipcode"] == key[1])].tolist()
-            index_to_drop += index
+    if modify_df:
+        for key, val in dict_diversity.items():
+            if len(val) < l:
+                index = new_df.index[(new_df["dob"] == key[0]) & (new_df["zipcode"] == key[1])].tolist()
+                index_to_drop += index
 
-    new_df = new_df.drop(index_to_drop, axis=0)
-    print(new_df.shape)
-    return new_df
+        new_df = new_df.drop(index_to_drop, axis=0)
+    return new_df, dict_diversity
 
 
 def entropy(df, dict_classes):
@@ -129,6 +126,39 @@ def loss_entropy(initial_df, final_df):
     final_entropy = entropy(final_df, form_classes(final_df))
     return initial_entropy - final_entropy
 
+def t_closeness(df, t=2):
+    dict_total_diseases = {}
+    for i in df["disease"]:
+        dict_total_diseases[i] = dict_total_diseases.get(i,0) + 1
+
+    plt.plot(dict_total_diseases.keys(),dict_total_diseases.values())
+    plt.show()
+
+    listDisease = list(dict_total_diseases.keys())
+    indexMappping = {}
+    for i in range(len(listDisease)):
+        indexMappping[listDisease[i]] = i
+
+    list_total_diseases = list(dict_total_diseases.values())
+
+    _, dict_diversity = l_diversity(df, modify_df = False)
+
+    matrixNumberOfDiseases = []
+    for i in dict_diversity.values():
+        numberOfDiseases = [0 for i in range(len(listDisease))]
+        for j in i:
+            numberOfDiseases[indexMappping[j]] += i[j]
+        matrixNumberOfDiseases.append(numberOfDiseases)
+
+    for i in matrixNumberOfDiseases:
+        distance = statDist(i, list_total_diseases)
+        if distance < t:#TODO
+            pass
+
+
+
+def statDist(l1, l2):
+    return 1
 
 if __name__ == '__main__':
     original_df = pd.read_csv('dataset-Privacy-Engineering.csv')
@@ -139,9 +169,11 @@ if __name__ == '__main__':
     anonymised_df = k_anonymization(pseudonimized_df, k=10)
     anonymised_df = anonymised_df.drop(["gender", "number_vehicles", "education", "children", "marital_status",
                                         "employment", "commute_time", "accommodation"], axis=1)
-    divsersified_df = l_diversity(anonymised_df, l=8)
+    diversified_df, _ = l_diversity(anonymised_df, l=8)
+    t_close_df = t_closeness(diversified_df)
     print(f"Loss between original and pseudominized : {loss_entropy(original_df, pseudonimized_df)}")
     print(f"Loss between pseudominized and anonymized : {loss_entropy(pseudonimized_df, anonymised_df)}")
-    print(f"Loss between anonymized and divsersified : {loss_entropy(anonymised_df, divsersified_df)}")
+    print(f"Loss between anonymized and divsersified : {loss_entropy(anonymised_df, diversified_df)}")
+
 
     anonymised_df.to_csv('test2.csv')
