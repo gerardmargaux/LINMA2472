@@ -9,6 +9,9 @@ from scipy.spatial.distance import jensenshannon
 from scipy.special import kl_div
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
+import scipy
+import scipy.stats
+from scipy.stats import entropy as entrop
 
 
 def remove_direct_identifier(df):
@@ -21,7 +24,7 @@ def remove_direct_identifier(df):
     list_id = new_df['id'].tolist()
     new_list_id = []
     for name in list_id:
-        name_to_hash = "MargauxGerard" + name.replace(" ", '') + "JeremieBogaert"  # Salting
+        name_to_hash = "JeremieBogaert" + name.replace(" ", '') + "MargauxGerard"  # Salting
         new_list_id.append(name_to_hash)
     new_df['id'] = [hashlib.sha1(str.encode(str(i))).hexdigest() for i in new_list_id]  # Hashing
     return new_df
@@ -61,7 +64,7 @@ def features_encoding(df):
     for feature in to_be_encoded:
         new_df[feature] = encoder.fit_transform(new_df[feature])
     newDiseaseCol = new_df["disease"]
-    for i in range(len( new_df["disease"])):
+    for i in range(len(new_df["disease"])):
         if "cancer" in new_df["disease"][i].split(" "):
             newDiseaseCol[i] = "cancer"
     new_df["disease"] = newDiseaseCol
@@ -103,7 +106,7 @@ def k_anonymization(df, k=2):
             index_to_drop += index
 
     new_df = new_df.drop(index_to_drop, axis=0)
-    print(len(new_df))
+    #print(len(new_df))
     return new_df
 
 
@@ -125,7 +128,6 @@ def l_diversity(df, l=2):
             index_to_drop += index
 
     new_df = new_df.drop(index_to_drop, axis=0)
-    print(len(new_df))
     return new_df, dict_diversity
 
 
@@ -144,12 +146,23 @@ def loss_entropy(initial_df, final_df):
     return initial_entropy - final_entropy
 
 
-def t_closeness(df, t=0.4):
-    dict_total_diseases = {}
+def t_closeness(df, t=0.2):
+    """dict_total_diseases = {}
     new_df = deepcopy(df)
     for i in new_df["disease"]:
         dict_total_diseases[i] = dict_total_diseases.get(i, 0) + 1
+    print(dict_total_diseases)"""
+    new_df = deepcopy(df)
+    dict_total_diseases = {"Alzheimer's disease": 147, 'multiple sclerosis': 133, 'heart disease': 208,
+                           'endometriosis': 143, 'gastritis': 255, 'HIV/AIDS': 159, 'cancer': 295, 'hypertension': 251,
+                           'kidney disease': 131, 'diabetes': 149, 'schizophrenia': 129}
 
+
+    """print(dict_total_diseases)
+    plt.bar(dict_total_diseases.keys(), dict_total_diseases.values())
+    plt.ylabel("Distribution in the dataset")
+    plt.xticks(rotation=30)
+    plt.show()"""
 
     listDisease = list(dict_total_diseases.keys())
     indexMappping = {}
@@ -158,8 +171,8 @@ def t_closeness(df, t=0.4):
 
     list_total_diseases = list(dict_total_diseases.values())
 
-    result = 0
-    for test in range(1000):
+    """result = 0
+    for test in range(10000):
         res = [random.randrange(1, 1000, 1) for _ in list(dict_total_diseases.values())]
         new_i = []
         for elem in res:
@@ -167,8 +180,9 @@ def t_closeness(df, t=0.4):
             new_i.append(val)
         x = [(i / sum(dict_total_diseases.values())) for i in list(dict_total_diseases.values())]
         y = [(i / sum(new_i)) for i in new_i]
-        result += sum(kl_div(y, x))
-    #print('KL-divergence random : ', result/1000)
+        print(entrop(y, x))
+        result += entrop(y, x)
+    print('KL-divergence random : ', result/10000)"""
 
     _, dict_diversity = l_diversity(new_df)
 
@@ -187,55 +201,67 @@ def t_closeness(df, t=0.4):
         for elem in i:
             val = elem*sum(list_total_diseases)/sum(i)
             new_i.append(val)
-        #distance = pyemd.emd_samples(new_i, list_total_diseases, normalized=True)
         x = [(i / sum(list_total_diseases)) for i in list_total_diseases]
         y = [(i / sum(new_i)) for i in new_i]
         xs.append(x)
         ys.append(y)
-        distance = sum(kl_div(y, x))
+        x = [(i / sum(dict_total_diseases.values())) for i in list(dict_total_diseases.values())]
+        distance = entrop(y, x)
         dist.append((distance, count))
         count += 1
     dist = sorted(dist)
-    dist = [i for i in dist if i[0]>t]
-    plt.plot(listDisease, xs[dist[0][1]], label = "Total distribution")
-    plt.plot(listDisease, ys[dist[0][1]], label = "Class distribution")
     print(dist[0])
+    print(dist[len(dist) - 1])
+
+    """plt.plot(listDisease, xs[dist[len(dist) - 1][1]], label="Total distribution")
+    plt.plot(listDisease, ys[dist[0][1]], label="Closest class distribution")
+    plt.plot(listDisease, ys[dist[len(dist) - 1][1]], label="Farthest class distribution")
+    plt.ylabel("Distribution")
+    plt.xticks(rotation=30)
     plt.legend()
-    plt.show()
+    plt.show()"""
+
+    dist = [i for i in dist if i[0] > t]
     index_to_drop = []
-    count = 0
     for distance, counting in dist:
         key = list(dict_diversity.keys())[counting]
         index = new_df.index[(new_df["employment"] == key[0]) & (new_df["children"] == key[1]) &
                              (new_df["marital_status"] == key[2]) & (new_df["commute_time"] == key[3])
                              & (new_df["education"] == key[4])].tolist()
         index_to_drop += index
-        if count == len(dist)-1:
-            plt.plot(listDisease, xs[counting], label = "Total distribution")
-            plt.plot(listDisease, ys[counting], label = "Class distribution")
-            print(ys[counting])
-            plt.legend()
-            plt.show()
-            print(key)
-        count +=1
 
-    new_df = new_df.drop(index_to_drop, axis=0)
-    return new_df, indexMappping, dict_total_diseases
+    final_df = new_df.drop(index_to_drop, axis=0)
 
+    dict_total = {}
+    for i in final_df["disease"]:
+        dict_total[i] = dict_total.get(i, 0) + 1
+    x = [(i / sum(dict_total_diseases.values())) for i in list(dict_total_diseases.values())]
+    y = [(i / sum(dict_total.values())) for i in list(dict_total.values())]
+    print('final distance : ', entrop(y, x))
+    plt.plot(listDisease, x, label="Original dataset distribution")
+    plt.plot(listDisease, y, label="Anonymized dataset distribution")
+    plt.ylabel("Distribution")
+    plt.xticks(rotation=30)
+    plt.legend()
+    plt.show()
 
+    return final_df, indexMappping, dict_total_diseases
 
 
 if __name__ == '__main__':
     original_df = pd.read_csv('dataset-Privacy-Engineering.csv')
-    print(original_df.shape)
+    #print(original_df.shape)
 
     encoded_df = features_encoding(original_df)
     hashed_df = remove_direct_identifier(encoded_df)
     pseudonimized_df = generalize_data(hashed_df)
-    pseudonimized_df = pseudonimized_df.drop(["gender", "zipcode", "ancestry", "number_vehicles", "accommodation"], axis=1)
-    anonymised_df = k_anonymization(pseudonimized_df, k=8)
-    diversified_df, _ = l_diversity(anonymised_df, l=6)
+    pseudonimized_df = pseudonimized_df.drop(["gender", "dob", "zipcode", "ancestry", "number_vehicles", "accommodation"], axis=1)
+    anonymised_df = k_anonymization(pseudonimized_df, k=6)
+    diversified_df, _ = l_diversity(anonymised_df, l=4)
     t_close_df, indexMap, old_dict_total_diseases = t_closeness(diversified_df)
+    t_close_df = t_close_df.reset_index()
+    t_close_df = t_close_df.drop('index', axis=1)
+    t_close_df.to_csv('dataset_stress1.csv')
     print(f"Loss total: {loss_entropy(original_df, t_close_df)}")
     print(t_close_df.shape)
 
@@ -255,31 +281,31 @@ if __name__ == '__main__':
     y = [(i/sum(dict_total_diseases_ordered_val)) for i in dict_total_diseases_ordered_val]
     print("KL-divergence after t-closeness : ", kl_divergence(x, y))"""
 
-    """ plt.plot(dict_total_diseases_ordered_key, dict_total_diseases_ordered_val, '-')
+    """plt.plot(dict_total_diseases_ordered_key, dict_total_diseases_ordered_val, '-')
     plt.plot(dict_total_diseases_ordered_key, dict_total_diseases_ordered_val, 'o')
     plt.xlabel("Diseases")
     plt.ylabel("Distribution in the dataset")
     plt.xticks(rotation=30)
     plt.show()"""
 
-    """list_k = list(range(1, 16, 1))
-    list_l = list(range(1, 16, 1))
+    """list_k = list(range(1, 12, 1))
+    list_l = list(range(1, 12, 1))
     final_result = []
     for k in list_k:
         current_result = []
         for l in list_l:
             anonymised_df = k_anonymization(pseudonimized_df, k=k)
             divsersified_df, _ = l_diversity(anonymised_df, l=l)
-            close, _, _ = t_closeness(divsersified_df)
-            loss = loss_entropy(original_df, close)
+            #loss = loss_entropy(original_df, divsersified_df)
+            loss = divsersified_df.shape[0]
             current_result.append(loss)
-            print(f"k : {k}  l : {l}  loss : {loss}")
+            print(f"k : {k}  l : {l}  shape: {loss}")
         final_result.append(current_result)
 
     final_result = np.array(final_result)
-    plt.imshow(final_result, extent=[1, 15, 1, 15], origin='lower')
+    plt.imshow(final_result, extent=[1, 11, 1, 11], origin='lower')
     plt.xlabel("Value of l")
-    plt.xticks(list(range(1, 16, 1)), list(range(1, 16, 1)))
+    plt.xticks(list(range(1, 12, 1)), list(range(1, 12, 1)))
     plt.ylabel('Value of k')
     plt.colorbar()"""
 
