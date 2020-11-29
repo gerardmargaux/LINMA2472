@@ -6,6 +6,7 @@ import pandas as pd
 import pyemd
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
+import random
 
 
 def remove_direct_identifier(df):
@@ -90,9 +91,7 @@ def k_anonymization(df, k=2):
     dict_clas = form_classes(df)
     new_df = deepcopy(df)
     for key, val in dict_clas.items():
-        if val >= k:
-            continue
-        else:
+        if val < k:
             index = new_df.index[(new_df["dob"] == key[0]) & (new_df["zipcode"] == key[1])].tolist()
             index_to_drop += index
 
@@ -134,14 +133,12 @@ def loss_entropy(initial_df, final_df):
     return initial_entropy - final_entropy
 
 
-def t_closeness(df, t=0.8):
+def t_closeness(df, t=0.05):
     dict_total_diseases = {}
     new_df = deepcopy(df)
     for i in new_df["disease"]:
         dict_total_diseases[i] = dict_total_diseases.get(i, 0) + 1
 
-    #plt.plot(dict_total_diseases.keys(), dict_total_diseases.values())
-    #plt.show()
 
     listDisease = list(dict_total_diseases.keys())
     indexMappping = {}
@@ -150,7 +147,22 @@ def t_closeness(df, t=0.8):
 
     list_total_diseases = list(dict_total_diseases.values())
 
-    _, dict_diversity = l_diversity(df)
+    result = 0
+    for test in range(1000):
+        res = [random.randrange(1, 1000, 1) for j in range(13)]
+        new_i = []
+        for elem in res:
+            val = elem * sum(dict_total_diseases.values()) / sum(res)
+            new_i.append(val)
+        x = [(i / sum(dict_total_diseases.values())) for i in list(dict_total_diseases.values())]
+        if sum(new_i) != 0:
+            y = [(i / sum(new_i)) for i in new_i]
+        else:
+            y = 0
+        result += kl_divergence(x, y)
+    #print('KL-divergence random : ', result/1000)
+
+    _, dict_diversity = l_diversity(new_df)
 
     matrixNumberOfDiseases = []
     for i in dict_diversity.values():
@@ -158,32 +170,50 @@ def t_closeness(df, t=0.8):
         for j in i:
             numberOfDiseases[indexMappping[j]] += i[j]
         matrixNumberOfDiseases.append(numberOfDiseases)
-
     dist = []
     count = 0
+    xs = []
+    ys = []
     for i in matrixNumberOfDiseases:
         new_i = []
         for elem in i:
             val = elem*sum(list_total_diseases)/sum(i)
             new_i.append(val)
-        distance = statDist(new_i, list_total_diseases)
+        #distance = pyemd.emd_samples(new_i, list_total_diseases, normalized=True)
+        x = [(i / sum(list_total_diseases)) for i in list_total_diseases]
+        y = [(i / sum(new_i)) for i in new_i]
+        xs.append(x)
+        ys.append(y)
+        distance = kl_divergence(x, y)
         dist.append((distance, count))
         count += 1
-
     dist = sorted(dist)
-    dist = dist[-int(len(dist)*(1-t)):]
+    dist = [i for i in dist if i[0]>t]
     index_to_drop = []
+    count = 0
     for distance, counting in dist:
         key = list(dict_diversity.keys())[counting]
         index = new_df.index[(new_df["dob"] == key[0]) & (new_df["zipcode"] == key[1])].tolist()
         index_to_drop += index
+        if count == len(dist)-1:
+            plt.plot(listDisease, xs[counting], label = "Total distribution")
+            plt.plot(listDisease, ys[counting], label = "Class distribution")
+            print(ys[counting])
+            plt.legend()
+            plt.show()
+            print(key, distance)
+        count +=1
 
     new_df = new_df.drop(index_to_drop, axis=0)
     return new_df, indexMappping, dict_total_diseases
 
 
-def statDist(l1, l2):
-    return pyemd.emd_samples(l1, l2, normalized=True)
+def kl_divergence(p, q):
+    val = 0
+    for i in range(len(p)):
+        if p[i] != 0 and q[i] != 0:
+            val += p[i] * math.log2(p[i] / q[i])
+    return val
 
 
 if __name__ == '__main__':
@@ -194,8 +224,8 @@ if __name__ == '__main__':
     pseudonimized_df = generalize_data(hashed_df)
     pseudonimized_df = pseudonimized_df.drop(["gender", "number_vehicles", "education", "children", "marital_status",
                                               "employment", "commute_time", "accommodation"], axis=1)
-    anonymised_df = k_anonymization(pseudonimized_df, k=10)
-    divsersified_df, _ = l_diversity(anonymised_df, l=8)
+    anonymised_df = k_anonymization(pseudonimized_df, k=8)
+    divsersified_df, _ = l_diversity(anonymised_df, l=6)
     t_close, _, _ = t_closeness(divsersified_df)
     """list_k = list(range(1, 16, 1))
     list_l = list(range(1, 16, 1))
@@ -220,5 +250,5 @@ if __name__ == '__main__':
     print(f"Loss between pseudominized and anonymized : {loss_entropy(pseudonimized_df, anonymised_df)}")
     print(f"Loss between anonymized and divsersified : {loss_entropy(anonymised_df, divsersified_df)}")
     print(f"Loss between original and NoSkew : {loss_entropy(original_df, t_close)}")
-
+    print(len(t_close))
     anonymised_df.to_csv('test2.csv')
