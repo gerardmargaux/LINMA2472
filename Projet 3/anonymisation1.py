@@ -54,6 +54,11 @@ def features_encoding(df):
     to_be_encoded = ["gender", "education", "employment", "marital_status", "ancestry", "accommodation"]
     for feature in to_be_encoded:
         new_df[feature] = encoder.fit_transform(new_df[feature])
+    newDiseaseCol = new_df["disease"]
+    for i in range(len( new_df["disease"])):
+        if "cancer" in new_df["disease"][i].split(" "):
+            newDiseaseCol[i] = "cancer"
+    new_df["disease"] = newDiseaseCol
     return new_df
 
 
@@ -192,7 +197,6 @@ if __name__ == '__main__':
     anonymised_df = k_anonymization(pseudonimized_df, k=10)
     divsersified_df, _ = l_diversity(anonymised_df, l=8)
     t_close, _, _ = t_closeness(divsersified_df)
-
     """list_k = list(range(1, 16, 1))
     list_l = list(range(1, 16, 1))
     final_result = []
@@ -212,8 +216,9 @@ if __name__ == '__main__':
     plt.xticks(list(range(1, 16, 1)), list(range(1, 16, 1)))
     plt.ylabel('Value of k')
     plt.colorbar()"""
-    #print(f"Loss between original and pseudominized : {loss_entropy(original_df, pseudonimized_df)}")
-    #print(f"Loss between pseudominized and anonymized : {loss_entropy(pseudonimized_df, anonymised_df)}")
-    #print(f"Loss between anonymized and divsersified : {loss_entropy(anonymised_df, divsersified_df)}")
+    print(f"Loss between original and pseudominized : {loss_entropy(original_df, pseudonimized_df)}")
+    print(f"Loss between pseudominized and anonymized : {loss_entropy(pseudonimized_df, anonymised_df)}")
+    print(f"Loss between anonymized and divsersified : {loss_entropy(anonymised_df, divsersified_df)}")
+    print(f"Loss between original and NoSkew : {loss_entropy(original_df, t_close)}")
 
-    #anonymised_df.to_csv('test2.csv')
+    anonymised_df.to_csv('test2.csv')
