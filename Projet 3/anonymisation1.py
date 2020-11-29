@@ -7,6 +7,7 @@ import pyemd
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 import random
+from scipy.special import kl_div
 
 
 def remove_direct_identifier(df):
@@ -133,7 +134,7 @@ def loss_entropy(initial_df, final_df):
     return initial_entropy - final_entropy
 
 
-def t_closeness(df, t=0.05):
+def t_closeness(df, t=0.4):
     dict_total_diseases = {}
     new_df = deepcopy(df)
     for i in new_df["disease"]:
@@ -149,18 +150,15 @@ def t_closeness(df, t=0.05):
 
     result = 0
     for test in range(1000):
-        res = [random.randrange(1, 1000, 1) for j in range(13)]
+        res = [random.randrange(1, 1000, 1) for _ in dict_total_diseases.values()]
         new_i = []
         for elem in res:
             val = elem * sum(dict_total_diseases.values()) / sum(res)
             new_i.append(val)
         x = [(i / sum(dict_total_diseases.values())) for i in list(dict_total_diseases.values())]
-        if sum(new_i) != 0:
-            y = [(i / sum(new_i)) for i in new_i]
-        else:
-            y = 0
-        result += kl_divergence(x, y)
-    #print('KL-divergence random : ', result/1000)
+        y = [(i / sum(new_i)) for i in new_i]
+        result += sum(kl_div(y, x))
+    print('KL-divergence random : ', result/1000)
 
     _, dict_diversity = l_diversity(new_df)
 
@@ -179,16 +177,20 @@ def t_closeness(df, t=0.05):
         for elem in i:
             val = elem*sum(list_total_diseases)/sum(i)
             new_i.append(val)
-        #distance = pyemd.emd_samples(new_i, list_total_diseases, normalized=True)
         x = [(i / sum(list_total_diseases)) for i in list_total_diseases]
         y = [(i / sum(new_i)) for i in new_i]
         xs.append(x)
         ys.append(y)
-        distance = kl_divergence(x, y)
+        distance = sum(kl_div(y, x))
         dist.append((distance, count))
         count += 1
+    #dist = [(abs(i), j) for i,j in dist]
     dist = sorted(dist)
     dist = [i for i in dist if i[0]>t]
+    plt.plot(listDisease, xs[dist[0][1]], label = "Total distribution")
+    plt.plot(listDisease, ys[dist[0][1]], label = "Class distribution")
+    plt.legend()
+    plt.show()
     index_to_drop = []
     count = 0
     for distance, counting in dist:
@@ -207,13 +209,6 @@ def t_closeness(df, t=0.05):
     new_df = new_df.drop(index_to_drop, axis=0)
     return new_df, indexMappping, dict_total_diseases
 
-
-def kl_divergence(p, q):
-    val = 0
-    for i in range(len(p)):
-        if p[i] != 0 and q[i] != 0:
-            val += p[i] * math.log2(p[i] / q[i])
-    return val
 
 
 if __name__ == '__main__':
