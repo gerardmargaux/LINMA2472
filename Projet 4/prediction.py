@@ -1,5 +1,4 @@
 import random
-
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
@@ -10,25 +9,30 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import SpectralClustering
 
 
-def preprocess_unsupervised(full_df):
+def preprocess_unsupervised(dataset):
+    X = dataset.drop(["Diagnosis"], axis=1)
+    Y = np.where(dataset["Diagnosis"] == "M", 0, 1)
+    Y = pd.DataFrame(Y)
+    Y.columns = ["Diagnosis"]
     scaler = MinMaxScaler()
-    X = full_df.drop(["diagnosis"], axis=1)
-    y = pd.DataFrame(np.where(full_df["diagnosis"] == "M", 0, 1))  # Benign = 1 / Malignant = 0
-    y.columns = ["diagnosis"]
-    X = pd.DataFrame(scaler.fit_transform(X))
-    normalized_data = pd.concat([X, y], axis=1)
+    scaler.fit(X)
+    X = scaler.transform(X)
+    X = pd.DataFrame(X)
+    normalized_data = pd.concat([X, Y], axis=1)
     return normalized_data
 
 
 def k_means_clustering(normalized_data):
+    # Taking Positive class=Benign and Negative class=Malignant
+
+    X_positive = normalized_data[normalized_data["Diagnosis"] == 1]
+    X_negative = normalized_data[normalized_data["Diagnosis"] == 0]
     final_unsupervised_train_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
     final_unsupervised_test_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
     unsupr_train_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
-    unsupr_test_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
-    X_positive = normalized_data[normalized_data["diagnosis"] == 1]
-    X_negative = normalized_data[normalized_data["diagnosis"] == 0]
+    unsupr_test_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
     for i in range(1, 31):
         # Randomly selecting Labelled Data (with 50% positive and 50% negative samples) in train set
@@ -36,11 +40,11 @@ def k_means_clustering(normalized_data):
         X_test = pd.concat([X_positive.sample(frac=0.2), X_negative.sample(frac=0.2)])
         X_train = normalized_data.drop(index=X_test.index.tolist())
 
-        y_test = X_test["diagnosis"]
-        y_train = X_train["diagnosis"]
+        y_test = X_test["Diagnosis"]
+        y_train = X_train["Diagnosis"]
 
-        X_test = X_test.drop(["diagnosis"], axis=1)
-        X_train = X_train.drop(["diagnosis"], axis=1)
+        X_test = X_test.drop(["Diagnosis"], axis=1)
+        X_train = X_train.drop(["Diagnosis"], axis=1)
 
         X_label, X_unlabel, y_label, y_unlabel = train_test_split(X_train, y_train, test_size=0.50, stratify=y_train)
 
@@ -50,12 +54,9 @@ def k_means_clustering(normalized_data):
         y_test = y_test.reset_index(drop=True)
 
         # Computing the centers of two clusters
-
-        X_train = X_train.dropna(axis=1)
-        X_test = X_test.dropna(axis=1)
-
         k_means = KMeans(n_clusters=2, init='k-means++', random_state=random.randint(20, 200), n_init=20).fit(X_train)
         clus_dist = k_means.transform(X_train)
+        # print(k_means.cluster_centers_)
 
         # Finding the closest 30 data points to each center
         nn = NearestNeighbors(n_neighbors=30, algorithm='brute').fit(X_train)
@@ -73,21 +74,21 @@ def k_means_clustering(normalized_data):
         # Finding the labels provided by K_means
         pred_labels = k_means.labels_
         pred_labels = pd.DataFrame(pred_labels)
-        pred_labels.columns = ['predicted label']
 
-        pred_labels_0 = pred_labels[pred_labels['predicted label'] == 0]
-        pred_labels_1 = pred_labels[pred_labels['predicted label'] == 1]
+        pred_labels_0 = pred_labels[pred_labels[0] == 0]
+        pred_labels_1 = pred_labels[pred_labels[0] == 1]
 
         # Compare the labels provided by K-means with the true labels of the training data
+
         max_index_0 = np.argmax(maj_poll_clus_0)
         max_index_1 = np.argmax(maj_poll_clus_1)
-        pred_labels_0['class'] = max_index_0
-        pred_labels_1['class'] = max_index_1
-
+        pred_labels_0.loc[:, 'class'] = max_index_0
+        pred_labels_1.loc[:, 'class'] = max_index_1
         final_pred_y = pd.concat([pred_labels_0['class'], pred_labels_1['class']], axis=0)
         final_pred_y = final_pred_y.sort_index()
 
         # Testing the final Model on Test data
+
         unsupervised_test_results = pd.DataFrame()
         unsupervised_test_results["True_y"] = y_test
         unsupervised_test_results["Pred_y"] = k_means.predict(X_test)
@@ -283,10 +284,11 @@ def spectral_clustering(normalized_data, k_means):
 
 
 if __name__ == '__main__':
-    df = pd.read_csv('./data.csv')
-    df = df.drop('id', axis=1)
-    normalized_df = preprocess_unsupervised(df)
+    dataset = pd.read_csv('./wdbc.csv')
+    dataset = dataset.drop("ID", axis=1)
+    print(dataset.head())
+    normalized_df = preprocess_unsupervised(dataset)
     k_means = k_means_clustering(normalized_df)
-    spectral_clustering(normalized_df, k_means)
+    #spectral_clustering(normalized_df, k_means)
 
 
