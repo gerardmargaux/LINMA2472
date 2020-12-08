@@ -243,8 +243,8 @@ if __name__ == '__main__':
     pseudonimized_df = generalize_data(hashed_df)
     pseudonimized_df = pseudonimized_df.drop(["gender", "number_vehicles", "education", "children", "marital_status",
                                               "employment", "ancestry", "commute_time", "accommodation"], axis=1)
-    anonymised_df = k_anonymization(pseudonimized_df, k=8)
-    divsersified_df, _ = l_diversity(anonymised_df, l=6)
+    anonymised_df = k_anonymization(pseudonimized_df, k=10)
+    divsersified_df, _ = l_diversity(anonymised_df, l=5)
     print(divsersified_df.shape)
     t_close_df, _, _ = t_closeness(divsersified_df)
     t_close_df = t_close_df.reset_index()
