@@ -1,6 +1,7 @@
 import random
 import pandas as pd
 import numpy as np
+from copy import deepcopy
 from sklearn.cluster import KMeans
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
 from sklearn.model_selection import train_test_split
@@ -75,15 +76,15 @@ def k_means_clustering(normalized_data):
         pred_labels = k_means.labels_
         pred_labels = pd.DataFrame(pred_labels)
 
-        pred_labels_0 = pred_labels[pred_labels[0] == 0]
-        pred_labels_1 = pred_labels[pred_labels[0] == 1]
+        pred_labels_0 = deepcopy(pred_labels.loc[pred_labels[0] == 0, :])
+        pred_labels_1 = deepcopy(pred_labels.loc[pred_labels[0] == 1, :])
 
         # Compare the labels provided by K-means with the true labels of the training data
 
         max_index_0 = np.argmax(maj_poll_clus_0)
         max_index_1 = np.argmax(maj_poll_clus_1)
-        pred_labels_0.loc[:, 'class'] = max_index_0
-        pred_labels_1.loc[:, 'class'] = max_index_1
+        pred_labels_0['class'] = max_index_0
+        pred_labels_1['class'] = max_index_1
         final_pred_y = pd.concat([pred_labels_0['class'], pred_labels_1['class']], axis=0)
         final_pred_y = final_pred_y.sort_index()
 
