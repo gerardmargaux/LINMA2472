@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import SpectralClustering
-
+from sklearn.svm import SVC
+import tensorflow as tf
+from keras.layers import Conv1D, GlobalMaxPooling1D, Embedding, LSTM, MaxPooling1D, Flatten
 
 def preprocess_unsupervised(dataset):
     X = dataset.drop(["diagnosis"], axis=1)
@@ -36,15 +38,18 @@ def uniform_distribution(df_training):
     return final_df
 
 
-def test(normalized_data, algo="K-Means"):
+def test(normalized_data, algo="K-Means" , modelType = "KNN"):
     X_positive = normalized_data[normalized_data["diagnosis"] == 1]
     X_negative = normalized_data[normalized_data["diagnosis"] == 0]
+
 
     final_spectral_train_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
     final_spectral_test_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
     spectr_train_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
     spectr_test_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
+    evalTotTrain = []
+    evalTotTest = []
 
     for i in range(1, 31):
         # Randomly selecting Labelled Data (with 50% positive and 50% negative samples) in train set
@@ -67,12 +72,11 @@ def test(normalized_data, algo="K-Means"):
         X_train = X_train.drop(["diagnosis"], axis=1)
 
         X_train = X_train.reset_index(drop=True)
-        y_train = y_train.reset_index(drop=True)
+        y_train = pd.DataFrame(y_train.reset_index(drop=True).ravel())
         X_test = X_test.reset_index(drop=True)
-        y_test = y_test.reset_index(drop=True)
+        y_test = pd.DataFrame(y_test.reset_index(drop=True).ravel())
 
         labels = None
-
         if algo == 'Spectral':
             clustering = SpectralClustering(n_clusters=2, affinity='rbf', n_init=20, random_state=random.randint(20, 200)).fit(X_train)
             labels = pd.DataFrame(clustering.labels_)
@@ -81,66 +85,93 @@ def test(normalized_data, algo="K-Means"):
             labels = pd.DataFrame(clustering.labels_)
         elif algo == 'K-Means':
             clustering = KMeans(n_clusters=2, init='k-means++', n_init=10, max_iter=300, tol=0.0001,
-                                precompute_distances='auto', verbose=0, random_state=None, copy_x=True, n_jobs=1,
+                                verbose=0, random_state=None, copy_x=True,
                                 algorithm='auto').fit(X_train)
             labels = pd.DataFrame(clustering.labels_)
 
-        model = KNeighborsClassifier(n_neighbors=20, weights='distance')
-        model.fit(X_train, labels)
+        if modelType == "KNN":
+            model = KNeighborsClassifier(n_neighbors=20, weights='distance')
+        elif modelType == "Keras":
+            model= tf.keras.Sequential()
+            #model.add(Conv1D(128, 3, input_shape=X_train.shape, activation='relu'))
+            #model.add(MaxPooling1D(2))
+            #model.add(Flatten())
+            model.add(tf.keras.layers.Dropout(0.3))
+            model.add(tf.keras.layers.Dense(20, activation='relu'))
+            model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
+            model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-        y_pred_train = model.predict(X_train)
-        y_pred = model.predict(X_test)
+        elif modelType == "SVM":
+            model = SVC()
 
-        # Accuracy, Precision, Recall, F-score, and AUC of TRAIN SET and TEST SET
+        print(len(X_train[0]), len(labels[0]))
+        model.fit(X_train.to_numpy(), labels.to_numpy().ravel())
 
-        # Accuracy for Train and Test
-        spectr_train_results['accuracy'].append(accuracy_score(y_train, y_pred_train))
-        spectr_test_results['accuracy'].append(
-            accuracy_score(y_test, y_pred))
 
-        # Precision for Train and Test
-        spectr_train_results['precision'].append(precision_score(y_train, y_pred_train))
-        spectr_test_results['precision'].append(
-            precision_score(y_test, y_pred))
+        if modelType =="Keras":
+            evalTotTest.append(model.evaluate(X_test, y_test)[0])
+            evalTotTrain.append(model.evaluate(X_train, y_train)[0])
 
-        # Recall for Train and Test
-        spectr_train_results['recall'].append(recall_score(y_train, y_pred_train))
-        spectr_test_results['recall'].append(
-            recall_score(y_test, y_pred))
+        else:
+            y_pred_train = pd.DataFrame(model.predict(X_train))
+            y_pred = pd.DataFrame(model.predict(X_test))
 
-        # F-score for Train and Test
-        spectr_train_results['fscore'].append(f1_score(y_train, y_pred_train))
-        spectr_test_results['fscore'].append(f1_score(y_test, y_pred))
 
-        # AUC for Train and Test
-        fpr, tpr, _ = roc_curve(y_train, y_pred_train)
-        area_uc = auc(fpr, tpr)
-        spectr_train_results['auc'].append(auc(fpr, tpr))
+            # Accuracy, Precision, Recall, F-score, and AUC of TRAIN SET and TEST SET
 
-        fpr, tpr, _ = roc_curve(y_test, y_pred)
-        area_uc = auc(fpr, tpr)
-        spectr_test_results['auc'].append(auc(fpr, tpr))
+            # Accuracy for Train and Test
+            spectr_train_results['accuracy'].append(accuracy_score(y_train, y_pred_train))
+            spectr_test_results['accuracy'].append(
+                accuracy_score(y_test, y_pred))
 
-        # Average scores (accuracy, precision, recall, F-score, and AUC) for Train set
-        final_spectral_train_results['accuracy'] = np.mean(spectr_train_results['accuracy'])
-        final_spectral_train_results['precision'] = np.mean(spectr_train_results['precision'])
-        final_spectral_train_results['recall'] = np.mean(spectr_train_results['recall'])
-        final_spectral_train_results['fscore'] = np.mean(spectr_train_results['fscore'])
-        final_spectral_train_results['auc'] = np.mean(spectr_train_results['auc'])
+            # Precision for Train and Test
+            spectr_train_results['precision'].append(precision_score(y_train, y_pred_train))
+            spectr_test_results['precision'].append(
+                precision_score(y_test, y_pred))
 
-        # Average scores (accuracy, precision, recall, F-score, and AUC) for Test set
-        final_spectral_test_results['accuracy'] = np.mean(spectr_test_results['accuracy'])
-        final_spectral_test_results['precision'] = np.mean(spectr_test_results['precision'])
-        final_spectral_test_results['recall'] = np.mean(spectr_test_results['recall'])
-        final_spectral_test_results['fscore'] = np.mean(spectr_test_results['fscore'])
-        final_spectral_test_results['auc'] = np.mean(spectr_test_results['auc'])
+            # Recall for Train and Test
+            spectr_train_results['recall'].append(recall_score(y_train, y_pred_train))
+            spectr_test_results['recall'].append(
+                recall_score(y_test, y_pred))
 
-    print(f"\n {algo} Clustering : Score for Train set:\n")
+            # F-score for Train and Test
+            spectr_train_results['fscore'].append(f1_score(y_train, y_pred_train))
+            spectr_test_results['fscore'].append(f1_score(y_test, y_pred))
+
+            # AUC for Train and Test
+            fpr, tpr, _ = roc_curve(y_train, y_pred_train)
+            area_uc = auc(fpr, tpr)
+            spectr_train_results['auc'].append(auc(fpr, tpr))
+
+            fpr, tpr, _ = roc_curve(y_test, y_pred)
+            area_uc = auc(fpr, tpr)
+            spectr_test_results['auc'].append(auc(fpr, tpr))
+
+            # Average scores (accuracy, precision, recall, F-score, and AUC) for Train set
+            final_spectral_train_results['accuracy'] = np.mean(spectr_train_results['accuracy'])
+            final_spectral_train_results['precision'] = np.mean(spectr_train_results['precision'])
+            final_spectral_train_results['recall'] = np.mean(spectr_train_results['recall'])
+            final_spectral_train_results['fscore'] = np.mean(spectr_train_results['fscore'])
+            final_spectral_train_results['auc'] = np.mean(spectr_train_results['auc'])
+
+            # Average scores (accuracy, precision, recall, F-score, and AUC) for Test set
+            final_spectral_test_results['accuracy'] = np.mean(spectr_test_results['accuracy'])
+            final_spectral_test_results['precision'] = np.mean(spectr_test_results['precision'])
+            final_spectral_test_results['recall'] = np.mean(spectr_test_results['recall'])
+            final_spectral_test_results['fscore'] = np.mean(spectr_test_results['fscore'])
+            final_spectral_test_results['auc'] = np.mean(spectr_test_results['auc'])
+
+    print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
     print(final_spectral_train_results)
 
-    print(f"\n {algo} Clustering : Score for Test set:\n")
+    print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
     print(final_spectral_test_results)
 
+    print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
+    print(np.mean(evalTotTrain))
+
+    print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
+    print(np.mean(evalTotTest))
 
 def clustering_visualization(normalized_df):
     data_drop = normalized_df.drop('diagnosis', axis=1)
@@ -196,7 +227,8 @@ if __name__ == '__main__':
 
     #print(dataset.head())
     normalized_df = preprocess_unsupervised(dataset)
-    test(normalized_df)
+    test(normalized_df, modelType = "SVM")
+    test(normalized_df, modelType = "Keras")
     #k_means = k_means_clustering(normalized_df)
     #self_organizing_map(normalized_df)
     #clustering_visualization(normalized_df)
@@ -204,5 +236,3 @@ if __name__ == '__main__':
     #hierarchical_clustering(normalized_df)
     #spectral_clustering(normalized_df, k_means)
     #tsne_clustering(normalized_df)
-
-
