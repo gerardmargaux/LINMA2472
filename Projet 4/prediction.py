@@ -5,10 +5,11 @@ import numpy as np
 from copy import deepcopy
 import sklearn
 import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN, Birch
 from sklearn.manifold import TSNE
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc, make_scorer
+from sklearn.mixture import GaussianMixture
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import SpectralClustering
@@ -32,63 +33,67 @@ def preprocess_unsupervised(dataset):
 def uniform_distribution(df_training):
     df_training_0 = df_training.loc[df_training['diagnosis'] == 0]
     df_training_1 = df_training.loc[df_training['diagnosis'] == 1]
-    frac = (len(df_training_1) - len(df_training_0))/len(df_training_0)
+    frac = min(abs((len(df_training_1) - len(df_training_0))/len(df_training_0)), 1)
     df_training_frac = df_training_0.sample(frac=frac)
     final_df = pd.concat([df_training_0, df_training_frac, df_training_1], axis=0)
     return final_df
 
 
-def test(normalized_data, algo="K-Means" , modelType = "KNN"):
-    X_positive = normalized_data[normalized_data["diagnosis"] == 1]
-    X_negative = normalized_data[normalized_data["diagnosis"] == 0]
+def tune_paramters(data):
+    X_train = data.loc[:, data.columns != 'diagnosis']
+    y_train = data['diagnosis']
+    model = KMeans()
+    my_scorer = make_scorer(accuracy_score, greater_is_better=True)
+    parameters = {'affinity': ['rbf'], 'n_clusters': [2], 'gamma': [10, 1, 0.1, 0.01, 0.001],
+                  'assign_labels': ['kmeans', 'discretize'], 'n_init': [30]}
+    kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=False, random_state=0)
+    clf = GridSearchCV(model, parameters, n_jobs=-1, cv=kfolds, scoring=my_scorer, verbose=True)
+    clf.fit(X_train, np.array(y_train))
+    best_params = clf.best_params_
+    best_score = clf.best_score_
+    print("Best parameters : ", best_params)
+    print("Best score : ", best_score)
 
 
-    final_spectral_train_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
-    final_spectral_test_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
+def prediction_model(normalized_data, algo="K-Means", modelType = "Keras"):
+    final_train_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
+    final_test_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
-    spectr_train_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
-    spectr_test_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
-    evalTotTrain = []
-    evalTotTest = []
+    train_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
+    test_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
-    for i in range(1, 31):
-        # Randomly selecting Labelled Data (with 50% positive and 50% negative samples) in train set
+    kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=False, random_state=0)
+    for train, test in kfolds.split(normalized_df):
 
-        X_test = pd.concat([X_positive.sample(frac=0.2), X_negative.sample(frac=0.2)])
-        X_train = normalized_data.drop(index=X_test.index.tolist())
-        X_train = uniform_distribution(X_train)
+        evalTotTrain = []
+        evalTotTest = []
+        # Training set
+        training_set = normalized_data.loc[train]
+        training_df = uniform_distribution(training_set)
+        X_train = training_df.loc[:, training_df.columns != 'diagnosis']
+        y_train = training_df['diagnosis']
 
-        dist = {"Malignant": 0, "Benign": 0}
-        for item in X_train['diagnosis'].tolist():
-            if item == 0:
-                dist['Malignant'] += 1
-            else:
-                dist['Benign'] += 1
+        # Test set
+        test_df = normalized_data.loc[test]
+        X_test = test_df.loc[:, test_df.columns != 'diagnosis']
+        y_test = test_df['diagnosis']
 
-        y_test = X_test["diagnosis"]
-        y_train = X_train["diagnosis"]
-
-        X_test = X_test.drop(["diagnosis"], axis=1)
-        X_train = X_train.drop(["diagnosis"], axis=1)
-
-        X_train = X_train.reset_index(drop=True)
-        y_train = pd.DataFrame(y_train.reset_index(drop=True).ravel())
-        X_test = X_test.reset_index(drop=True)
-        y_test = pd.DataFrame(y_test.reset_index(drop=True).ravel())
-
+        # Clustering model
         labels = None
         if algo == 'Spectral':
-            clustering = SpectralClustering(n_clusters=2, affinity='rbf', n_init=20, random_state=random.randint(20, 200)).fit(X_train)
-            labels = pd.DataFrame(clustering.labels_)
-        elif algo == 'Hierarchic':
-            clustering = AgglomerativeClustering(n_clusters=2, affinity='euclidean', linkage='ward').fit(X_train)
-            labels = pd.DataFrame(clustering.labels_)
+            clustering = SpectralClustering(n_clusters=2, affinity='rbf', n_init=20, random_state=0).fit(X_train)
+            labels = pd.DataFrame(clustering.labels_).to_numpy().ravel()
+        elif algo == 'Hierarchical':
+            labels = AgglomerativeClustering(n_clusters=2, affinity='euclidean', linkage='ward').fit_predict(X_train)
         elif algo == 'K-Means':
             clustering = KMeans(n_clusters=2, init='k-means++', n_init=10, max_iter=300, tol=0.0001,
                                 verbose=0, random_state=None, copy_x=True,
                                 algorithm='auto').fit(X_train)
-            labels = pd.DataFrame(clustering.labels_)
-
+        elif algo == 'GaussianMixture':
+            clustering = GaussianMixture(n_components=2).fit(X_train)
+            labels = clustering.predict(X_train)
+        elif algo == 'Birch':
+            labels = Birch(threshold=0.01, n_clusters=2).fit_predict(X_train)
         if modelType == "KNN":
             model = KNeighborsClassifier(n_neighbors=20, weights='distance')
         elif modelType == "Keras":
@@ -96,16 +101,15 @@ def test(normalized_data, algo="K-Means" , modelType = "KNN"):
             #model.add(Conv1D(128, 3, input_shape=X_train.shape, activation='relu'))
             #model.add(MaxPooling1D(2))
             #model.add(Flatten())
-            model.add(tf.keras.layers.Dropout(0.3))
             model.add(tf.keras.layers.Dense(20, activation='relu'))
+            model.add(tf.keras.layers.Dropout(0.3))
             model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
             model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
         elif modelType == "SVM":
             model = SVC()
 
-        print(len(X_train[0]), len(labels[0]))
-        model.fit(X_train.to_numpy(), labels.to_numpy().ravel())
+        model.fit(X_train, labels)
 
 
         if modelType =="Keras":
@@ -161,17 +165,19 @@ def test(normalized_data, algo="K-Means" , modelType = "KNN"):
             final_spectral_test_results['fscore'] = np.mean(spectr_test_results['fscore'])
             final_spectral_test_results['auc'] = np.mean(spectr_test_results['auc'])
 
-    print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
-    print(final_spectral_train_results)
+    if modelType != "Keras":
+        print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
+        print(final_spectral_train_results)
 
-    print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
-    print(final_spectral_test_results)
+        print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
+        print(final_spectral_test_results)
 
-    print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
-    print(np.mean(evalTotTrain))
+    else:
+        print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
+        print(np.mean(evalTotTrain))
 
-    print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
-    print(np.mean(evalTotTest))
+        print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
+        print(np.mean(evalTotTest))
 
 def clustering_visualization(normalized_df):
     data_drop = normalized_df.drop('diagnosis', axis=1)
@@ -183,7 +189,6 @@ def clustering_visualization(normalized_df):
     kmns = KMeans(n_clusters=2, init='k-means++', n_init=10, max_iter=300, tol=0.0001, precompute_distances='auto',
                   verbose=0, random_state=None, copy_x=True, n_jobs=1, algorithm='auto')
     kY = kmns.fit_predict(X)
-
     f, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
     ax1.scatter(Y[:, 0], Y[:, 1], c=kY, cmap="jet", edgecolor="None", alpha=0.35)
     ax1.set_title('k-means clustering plot')
@@ -193,7 +198,6 @@ def clustering_visualization(normalized_df):
     kmns = SpectralClustering(n_clusters=2, gamma=0.5, affinity='rbf', eigen_tol=0.0, assign_labels='kmeans', degree=3,
                               coef0=1, kernel_params=None, n_jobs=1)
     kY = kmns.fit_predict(X)
-
     f, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
     ax1.scatter(Y[:, 0], Y[:, 1], c=kY, cmap="jet", edgecolor="None", alpha=0.35)
     ax1.set_title('Spectral clustering plot')
@@ -202,7 +206,6 @@ def clustering_visualization(normalized_df):
 
     aggC = AgglomerativeClustering(n_clusters=2, linkage='ward')
     kY = aggC.fit_predict(X)
-
     f, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
     ax1.scatter(Y[:, 0], Y[:, 1], c=kY, cmap="jet", edgecolor="None", alpha=0.35)
     ax1.set_title('Hierarchical clustering plot')
@@ -213,6 +216,7 @@ def clustering_visualization(normalized_df):
 if __name__ == '__main__':
     dataset = pd.read_csv('./data.csv')
     dataset = dataset.drop(["id", "Unnamed: 32"], axis=1)
+
     """list_diag = dataset['diagnosis'].tolist()
     dict_diag = {"Benign": 0, "Malignant": 0}
     for item in list_diag:
@@ -225,14 +229,7 @@ if __name__ == '__main__':
     plt.ylabel("Distribution of diagnosis")
     plt.show()"""
 
-    #print(dataset.head())
     normalized_df = preprocess_unsupervised(dataset)
-    test(normalized_df, modelType = "SVM")
-    test(normalized_df, modelType = "Keras")
-    #k_means = k_means_clustering(normalized_df)
-    #self_organizing_map(normalized_df)
-    #clustering_visualization(normalized_df)
-    #k_means = k_means_clustering(normalized_df)
-    #hierarchical_clustering(normalized_df)
-    #spectral_clustering(normalized_df, k_means)
-    #tsne_clustering(normalized_df)
+    prediction_model(normalized_df, algo = "GaussianMixture", modelType = "Keras")
+    #tune_paramters(normalized_df)
+    #prediction_model(normalized_df, algo="Birch")
