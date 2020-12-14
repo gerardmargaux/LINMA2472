@@ -15,7 +15,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import SpectralClustering
 from sklearn.svm import SVC
 import tensorflow as tf
-from keras.layers import Conv1D, GlobalMaxPooling1D, Embedding, LSTM, MaxPooling1D, Flatten
+
 
 def preprocess_unsupervised(dataset):
     X = dataset.drop(["diagnosis"], axis=1)
@@ -41,21 +41,24 @@ def uniform_distribution(df_training):
 
 def tune_paramters(data):
     X_train = data.loc[:, data.columns != 'diagnosis']
-    y_train = data['diagnosis']
-    model = KMeans()
+    labels = Birch(threshold=0.01, n_clusters=2).fit_predict(X_train)
+    model = SVC()
+    parameters = {'C': [1, 10, 100], 'kernel': ['linear', 'poly', 'rbf', 'sigmoid'], 'degree': [3, 4, 5],
+                  'random_state': [0], 'shrinking': [True, False]}
     my_scorer = make_scorer(accuracy_score, greater_is_better=True)
-    parameters = {'affinity': ['rbf'], 'n_clusters': [2], 'gamma': [10, 1, 0.1, 0.01, 0.001],
-                  'assign_labels': ['kmeans', 'discretize'], 'n_init': [30]}
+    """model = KNeighborsClassifier()
+    parameters = {'n_neighbors': [5, 10, 15, 20, 50, 100, 200, 500], 'weights': ['distance', 'uniform'],
+                  'p': [1, 2, 3, 4, 5], 'metric': ['minkowski']}"""
     kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=False, random_state=0)
     clf = GridSearchCV(model, parameters, n_jobs=-1, cv=kfolds, scoring=my_scorer, verbose=True)
-    clf.fit(X_train, np.array(y_train))
+    clf.fit(X_train, labels)
     best_params = clf.best_params_
     best_score = clf.best_score_
     print("Best parameters : ", best_params)
     print("Best score : ", best_score)
 
 
-def prediction_model(normalized_data, algo="K-Means", modelType = "Keras"):
+def prediction_model(normalized_data, algo="K-Means", modelType="Keras"):
     final_train_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
     final_test_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
@@ -65,8 +68,6 @@ def prediction_model(normalized_data, algo="K-Means", modelType = "Keras"):
     kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=False, random_state=0)
     for train, test in kfolds.split(normalized_df):
 
-        evalTotTrain = []
-        evalTotTest = []
         # Training set
         training_set = normalized_data.loc[train]
         training_df = uniform_distribution(training_set)
@@ -81,103 +82,119 @@ def prediction_model(normalized_data, algo="K-Means", modelType = "Keras"):
         # Clustering model
         labels = None
         if algo == 'Spectral':
-            clustering = SpectralClustering(n_clusters=2, affinity='rbf', n_init=20, random_state=0).fit(X_train)
+            clustering = SpectralClustering(n_clusters=2, affinity='rbf', gamma=0.01, n_init=30, random_state=0).fit(X_train)
             labels = pd.DataFrame(clustering.labels_).to_numpy().ravel()
         elif algo == 'Hierarchical':
-            labels = AgglomerativeClustering(n_clusters=2, affinity='euclidean', linkage='ward').fit_predict(X_train)
+            labels = AgglomerativeClustering(n_clusters=2, affinity='euclidean', linkage='single').fit_predict(X_train)
         elif algo == 'K-Means':
             clustering = KMeans(n_clusters=2, init='k-means++', n_init=10, max_iter=300, tol=0.0001,
                                 verbose=0, random_state=None, copy_x=True,
                                 algorithm='auto').fit(X_train)
+            labels = pd.DataFrame(clustering.labels_).to_numpy().ravel()
         elif algo == 'GaussianMixture':
             clustering = GaussianMixture(n_components=2).fit(X_train)
             labels = clustering.predict(X_train)
         elif algo == 'Birch':
             labels = Birch(threshold=0.01, n_clusters=2).fit_predict(X_train)
+        elif algo == 'Supervised':
+            labels = y_train
+
+        # Prediction model
+        model = None
         if modelType == "KNN":
-            model = KNeighborsClassifier(n_neighbors=20, weights='distance')
+            #model = KNeighborsClassifier(n_neighbors=20, weights='distance', metric='minkowski', p=2)
+            #model = KNeighborsClassifier(n_neighbors=5, weights='distance', metric='minkowski', p=1)
+            #model = KNeighborsClassifier(n_neighbors=20, weights='distance', metric='minkowski', p=2)
+            #model = KNeighborsClassifier(n_neighbors=5, weights='distance', metric='minkowski', p=2)
+            model = KNeighborsClassifier(n_neighbors=5, weights='distance', metric='minkowski', p=4)
+            model.fit(X_train, labels)
         elif modelType == "Keras":
-            model= tf.keras.Sequential()
-            #model.add(Conv1D(128, 3, input_shape=X_train.shape, activation='relu'))
-            #model.add(MaxPooling1D(2))
-            #model.add(Flatten())
-            model.add(tf.keras.layers.Dense(20, activation='relu'))
-            model.add(tf.keras.layers.Dropout(0.3))
+            model = tf.keras.Sequential()
+            model.add(tf.keras.layers.Dense(64, activation='linear'))
+            model.add(tf.keras.layers.Dropout(0.6))
+            model.add(tf.keras.layers.Dense(64, activation='linear'))
+            model.add(tf.keras.layers.Dropout(0.6))
+            model.add(tf.keras.layers.Dense(64, activation='relu'))
+            model.add(tf.keras.layers.Dropout(0.6))
             model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
-            model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
+            optimizer = tf.keras.optimizers.Adam(lr=0.0001)
+            model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+            model.fit(X_train, labels, batch_size=32, epochs=200)
         elif modelType == "SVM":
-            model = SVC()
+            #model = SVC(C=1, kernel='poly', shrinking=True, random_state=0)
+            #model = SVC(C=10, kernel='linear', shrinking=True, random_state=0)
+            model = SVC(C=1, kernel='rbf', shrinking=True, random_state=0)
+            model.fit(X_train, labels)
 
-        model.fit(X_train, labels)
+        y_pred_train = model.predict(X_train)
+        y_pred = model.predict(X_test)
 
+        new_y_pred_train = []
+        for item in y_pred_train:
+            if item < 0.5:
+                new_y_pred_train.append(0)
+            else:
+                new_y_pred_train.append(1)
 
-        if modelType =="Keras":
-            evalTotTest.append(model.evaluate(X_test, y_test)[0])
-            evalTotTrain.append(model.evaluate(X_train, y_train)[0])
+        new_y_pred = []
+        for item in y_pred:
+            if item < 0.5:
+                new_y_pred.append(0)
+            else:
+                new_y_pred.append(1)
 
-        else:
-            y_pred_train = pd.DataFrame(model.predict(X_train))
-            y_pred = pd.DataFrame(model.predict(X_test))
+        if accuracy_score(y_train, new_y_pred_train) < 0.5:
+            for i in range(len(new_y_pred_train)):
+                new_y_pred_train[i] = 1 - new_y_pred_train[i]
 
+        if accuracy_score(y_train, new_y_pred) < 0.5:
+            for i in range(len(new_y_pred)):
+                new_y_pred[i] = 1 - new_y_pred[i]
 
-            # Accuracy, Precision, Recall, F-score, and AUC of TRAIN SET and TEST SET
+        # Accuracy for Train and Test
+        train_results['accuracy'].append(accuracy_score(y_train, new_y_pred_train))
+        test_results['accuracy'].append(accuracy_score(y_test, new_y_pred))
 
-            # Accuracy for Train and Test
-            spectr_train_results['accuracy'].append(accuracy_score(y_train, y_pred_train))
-            spectr_test_results['accuracy'].append(
-                accuracy_score(y_test, y_pred))
+        # Precision for Train and Test
+        train_results['precision'].append(precision_score(y_train, new_y_pred_train))
+        test_results['precision'].append(precision_score(y_test, new_y_pred))
 
-            # Precision for Train and Test
-            spectr_train_results['precision'].append(precision_score(y_train, y_pred_train))
-            spectr_test_results['precision'].append(
-                precision_score(y_test, y_pred))
+        # Recall for Train and Test
+        train_results['recall'].append(recall_score(y_train, new_y_pred_train))
+        test_results['recall'].append(recall_score(y_test, new_y_pred))
 
-            # Recall for Train and Test
-            spectr_train_results['recall'].append(recall_score(y_train, y_pred_train))
-            spectr_test_results['recall'].append(
-                recall_score(y_test, y_pred))
+        # F-score for Train and Test
+        train_results['fscore'].append(f1_score(y_train, new_y_pred_train))
+        test_results['fscore'].append(f1_score(y_test, new_y_pred))
 
-            # F-score for Train and Test
-            spectr_train_results['fscore'].append(f1_score(y_train, y_pred_train))
-            spectr_test_results['fscore'].append(f1_score(y_test, y_pred))
+        # AUC for Train and Test
+        fpr, tpr, _ = roc_curve(y_train, new_y_pred_train)
+        area_uc = auc(fpr, tpr)
+        train_results['auc'].append(auc(fpr, tpr))
+        fpr, tpr, _ = roc_curve(y_test, new_y_pred)
+        area_uc = auc(fpr, tpr)
+        test_results['auc'].append(auc(fpr, tpr))
 
-            # AUC for Train and Test
-            fpr, tpr, _ = roc_curve(y_train, y_pred_train)
-            area_uc = auc(fpr, tpr)
-            spectr_train_results['auc'].append(auc(fpr, tpr))
+        # Average scores (accuracy, precision, recall, F-score, and AUC) for Train set
+    final_train_results['accuracy'] = np.mean(train_results['accuracy'])
+    final_train_results['precision'] = np.mean(train_results['precision'])
+    final_train_results['recall'] = np.mean(train_results['recall'])
+    final_train_results['fscore'] = np.mean(train_results['fscore'])
+    final_train_results['auc'] = np.mean(train_results['auc'])
 
-            fpr, tpr, _ = roc_curve(y_test, y_pred)
-            area_uc = auc(fpr, tpr)
-            spectr_test_results['auc'].append(auc(fpr, tpr))
+    # Average scores (accuracy, precision, recall, F-score, and AUC) for Test set
+    final_test_results['accuracy'] = np.mean(test_results['accuracy'])
+    final_test_results['precision'] = np.mean(test_results['precision'])
+    final_test_results['recall'] = np.mean(test_results['recall'])
+    final_test_results['fscore'] = np.mean(test_results['fscore'])
+    final_test_results['auc'] = np.mean(test_results['auc'])
 
-            # Average scores (accuracy, precision, recall, F-score, and AUC) for Train set
-            final_spectral_train_results['accuracy'] = np.mean(spectr_train_results['accuracy'])
-            final_spectral_train_results['precision'] = np.mean(spectr_train_results['precision'])
-            final_spectral_train_results['recall'] = np.mean(spectr_train_results['recall'])
-            final_spectral_train_results['fscore'] = np.mean(spectr_train_results['fscore'])
-            final_spectral_train_results['auc'] = np.mean(spectr_train_results['auc'])
+    print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
+    print(final_train_results)
 
-            # Average scores (accuracy, precision, recall, F-score, and AUC) for Test set
-            final_spectral_test_results['accuracy'] = np.mean(spectr_test_results['accuracy'])
-            final_spectral_test_results['precision'] = np.mean(spectr_test_results['precision'])
-            final_spectral_test_results['recall'] = np.mean(spectr_test_results['recall'])
-            final_spectral_test_results['fscore'] = np.mean(spectr_test_results['fscore'])
-            final_spectral_test_results['auc'] = np.mean(spectr_test_results['auc'])
+    print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
+    print(final_test_results)
 
-    if modelType != "Keras":
-        print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
-        print(final_spectral_train_results)
-
-        print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
-        print(final_spectral_test_results)
-
-    else:
-        print(f"\n {algo} Clustering, {modelType} Model : Score for Train set:\n")
-        print(np.mean(evalTotTrain))
-
-        print(f"\n {algo} Clustering, {modelType} Model : Score for Test set:\n")
-        print(np.mean(evalTotTest))
 
 def clustering_visualization(normalized_df):
     data_drop = normalized_df.drop('diagnosis', axis=1)
@@ -230,6 +247,5 @@ if __name__ == '__main__':
     plt.show()"""
 
     normalized_df = preprocess_unsupervised(dataset)
-    prediction_model(normalized_df, algo = "GaussianMixture", modelType = "Keras")
+    prediction_model(normalized_df, algo="Birch", modelType="SVM")
     #tune_paramters(normalized_df)
-    #prediction_model(normalized_df, algo="Birch")
