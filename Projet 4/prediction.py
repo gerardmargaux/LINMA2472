@@ -45,11 +45,11 @@ def tune_paramters(data):
     model = SVC()
     parameters = {'C': [1, 10, 100], 'kernel': ['linear', 'poly', 'rbf', 'sigmoid'], 'degree': [3, 4, 5],
                   'random_state': [0], 'shrinking': [True, False]}
-    my_scorer = make_scorer(accuracy_score, greater_is_better=True)
+    my_scorer = make_scorer(my_accuracy_score, greater_is_better=True)
     """model = KNeighborsClassifier()
     parameters = {'n_neighbors': [5, 10, 15, 20, 50, 100, 200, 500], 'weights': ['distance', 'uniform'],
                   'p': [1, 2, 3, 4, 5], 'metric': ['minkowski']}"""
-    kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=False, random_state=0)
+    kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=True)
     clf = GridSearchCV(model, parameters, n_jobs=-1, cv=kfolds, scoring=my_scorer, verbose=True)
     clf.fit(X_train, labels)
     best_params = clf.best_params_
@@ -57,6 +57,35 @@ def tune_paramters(data):
     print("Best parameters : ", best_params)
     print("Best score : ", best_score)
 
+def my_accuracy_score(y_true, y_pred):
+    if accuracy_score(y_true, y_pred) >= 0.5:
+        return accuracy_score(y_true, y_pred)
+    else:
+        return accuracy_score(y_true, 1 - y_pred)
+
+def my_precision_score(y_true, y_pred):
+    if accuracy_score(y_true, y_pred) >= 0.5:
+        return precision_score(y_true, y_pred)
+    else:
+        return precision_score(y_true, 1 - y_pred)
+
+def my_recall_score(y_true, y_pred):
+    if accuracy_score(y_true, y_pred) >= 0.5:
+        return recall_score(y_true, y_pred)
+    else:
+        return recall_score(y_true, 1-y_pred)
+
+def my_f1_score(y_true, y_pred):
+    if accuracy_score(y_true, y_pred) >= 0.5:
+        return f1_score(y_true, y_pred)
+    else:
+        return f1_score(y_true, 1 - y_pred)
+
+def my_roc_curve(y_true, y_pred):
+    if accuracy_score(y_true, y_pred) >= 0.5:
+        return roc_curve(y_true, y_pred)
+    else:
+        return roc_curve(y_true, 1-y_pred)
 
 def prediction_model(normalized_data, algo="K-Means", modelType="Keras"):
     final_train_results = {p: None for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
@@ -65,7 +94,7 @@ def prediction_model(normalized_data, algo="K-Means", modelType="Keras"):
     train_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
     test_results = {p: [] for p in ['accuracy', 'precision', 'recall', 'fscore', 'auc']}
 
-    kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=False, random_state=0)
+    kfolds = sklearn.model_selection.KFold(n_splits=10, shuffle=True)
     for train, test in kfolds.split(normalized_df):
 
         # Training set
@@ -123,7 +152,7 @@ def prediction_model(normalized_data, algo="K-Means", modelType="Keras"):
         elif modelType == "SVM":
             #model = SVC(C=1, kernel='poly', shrinking=True, random_state=0)
             #model = SVC(C=10, kernel='linear', shrinking=True, random_state=0)
-            model = SVC(C=1, kernel='rbf', shrinking=True, random_state=0)
+            model = SVC(C=1, kernel='rbf', degree = 3,  shrinking=True, random_state=0)
             model.fit(X_train, labels)
 
         y_pred_train = model.predict(X_train)
@@ -144,12 +173,9 @@ def prediction_model(normalized_data, algo="K-Means", modelType="Keras"):
                 new_y_pred.append(1)
 
         if accuracy_score(y_train, new_y_pred_train) < 0.5:
-            for i in range(len(new_y_pred_train)):
-                new_y_pred_train[i] = 1 - new_y_pred_train[i]
+            new_y_pred_train = 1 - pd.DataFrame(new_y_pred_train)
+            new_y_pred = 1 -  pd.DataFrame(new_y_pred)
 
-        if accuracy_score(y_train, new_y_pred) < 0.5:
-            for i in range(len(new_y_pred)):
-                new_y_pred[i] = 1 - new_y_pred[i]
 
         # Accuracy for Train and Test
         train_results['accuracy'].append(accuracy_score(y_train, new_y_pred_train))
@@ -248,4 +274,4 @@ if __name__ == '__main__':
 
     normalized_df = preprocess_unsupervised(dataset)
     prediction_model(normalized_df, algo="Birch", modelType="SVM")
-    #tune_paramters(normalized_df)
+    tune_paramters(normalized_df)
